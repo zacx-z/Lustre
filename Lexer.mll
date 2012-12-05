@@ -1,10 +1,12 @@
 {
 open Parser
-open Parse_aux
 open Lexing
 open Printf
 
-let error = parse_error
+
+exception Parse_Error of string
+
+let error str = raise (Parse_Error str)
 
 (* overflow is not checked; large constants will be taken modulo 2^32 *)
 let parse_int base s =
