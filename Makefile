@@ -1,17 +1,22 @@
-OBJ_SRC=Type.ml Parser.mli Parser.ml Lexer.ml
+SRC=Type.ml Parser.ml Lexer.ml
+ITF=Parser.mli
+OBJ=$(SRC:%.ml=%.cmo)
 
-all: objects
+all: $(OBJ)
 
 run: all
 	ocaml Type.cmo Parser.cmo Lexer.cmo Main.ml
 
-objects: $(OBJ_SRC)
-	ocamlc -c $(OBJ_SRC)
+$(OBJ): $(SRC) $(ITF)
+	ocamlc -c $(ITF) $(SRC)
 
-Parser.ml: Parser.mly
+Parser.ml Parser.mli: Parser.mly
 	ocamlyacc Parser.mly
 
 Lexer.ml: Lexer.mll
 	ocamllex Lexer.mll
 
-.PHONY: all run
+clean:
+	rm *.cmo *.cmi Parser.ml Lexer.ml Parser.mli
+
+.PHONY: all run clean
