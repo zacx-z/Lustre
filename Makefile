@@ -1,14 +1,13 @@
-SRC=Type.ml Parser.ml Lexer.ml
-ITF=Parser.mli
-OBJ=$(SRC:%.ml=%.cmo)
+SRC=Type.ml Parser.mli Parser.ml Lexer.ml
+OBJ=$(patsubst %.mli,%.cmi,$(SRC:%.ml=%.cmo))
 
 all: $(OBJ)
 
 run: all
 	ocaml Type.cmo Parser.cmo Lexer.cmo Main.ml
 
-$(OBJ): $(SRC) $(ITF)
-	ocamlc -c $(ITF) $(SRC)
+$(OBJ): $(SRC)
+	ocamlc -c $(SRC)
 
 Parser.ml Parser.mli: Parser.mly
 	ocamlyacc Parser.mly

@@ -1,4 +1,9 @@
-node main(x:int) returns (s:int)
+node main(x:int) returns (s:int);
+let
+    s = 2 * x;
+tel
+
+node abc(x:int) returns (s:int);
 let
     s = 2 * x;
 tel

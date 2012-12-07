@@ -72,14 +72,15 @@ open Type
 %%
 
 file:
-  | decls EOF                 { {node_num = 0;} }
+  | decls EOF                 { $1 }
   ;
 
 decls:
-  | TYPE type_decls decls                 { 1 }
-  | CONST const_decls decls               { 1 }
-  | user_op_decl decls                    { 1 }
-  | /* empty */                           { 1 }
+  | TYPE type_decls decls                 { $3 }
+  | CONST const_decls decls               { $3 }
+  | user_op_decl decls                    { { $2 with nodes = (node_name
+  $1.header, $1) :: $2.nodes; } }
+  | /* empty */                           { { types=[]; nodes=[] } }
   ;
 
 type_decls:
@@ -95,11 +96,11 @@ type_decl0:
   ;
 
 type_expr:
-  | BOOL                                  { 1 }
-  | INT                                   { 1 }
-  | REAL                                  { 1 }
-  | CHAR                                  { 1 }
-  | ident_nonlocal                        { 1 }
+  | BOOL                                  { Bool }
+  | INT                                   { Int }
+  | REAL                                  { Real }
+  | CHAR                                  { Char }
+  | ident_nonlocal                        { Ident $1 }
 //  | LBRACE field_decls RBRACE           { 1 }
 //  | type_expr CARET expr                { 1 }
   ;
@@ -128,28 +129,28 @@ const_decl0:
   ;
 
 user_op_decl:
-  | user_op_decl1                         { 1 }
-  ;
-
-user_op_decl1:
-  | node_header SEMICOLON                               { 1 }
-  | node_header equations_single SEMICOLON              { 1 }
-  | node_header optional_semicolon LET equations TEL optional_semicolon   { 1 }
-  | node_header2 optional_semicolon LET equations TEL optional_semicolon   { 1 }
+  | node_header SEMICOLON
+  { { header=$1; equations=[] } }
+  | node_header equations_single SEMICOLON
+  { { header=$1; equations=[] } }
+  | node_header optional_semicolon LET equations TEL optional_semicolon
+  { { header=$1; equations=$4 } }
+  | node_header2 optional_semicolon LET equations TEL optional_semicolon
+  { { header=$1; equations=$4 } }
   ;
 
 node_header:
-  | op_kind ident_nonlocal params RETURNS params        { 1 }
+  | op_kind ident_nonlocal params RETURNS params        { ($1, $2, $3, $5) }
   ;
 
 node_header2:
-  | node_header local_block               { 1 }
+  | node_header local_block               { $1 }
   ;
 
 /* Ignoring the difference between a node and a function */
 op_kind:
-  | NODE                                  { 1 }
-  | FUNCTION                              { 1 }
+  | NODE                                  { Node }
+  | FUNCTION                              { Function }
   ;
 
 local_block:
@@ -162,38 +163,38 @@ var_decls2:
   ;
 
 params:
-  | LPAREN RPAREN                         { 1 }
-  | LPAREN var_decls RPAREN               { 1 }
+  | LPAREN RPAREN                         { [] }
+  | LPAREN var_decls RPAREN               { $2 }
   ;
 
 var_decls:
-  | var_decl                              { 1 }
-  | var_decl SEMICOLON var_decls          { 1 }
+  | var_decl                              { [$1] }
+  | var_decl SEMICOLON var_decls          { $1 :: $3 }
   ;
 
 var_decl:
-  | var_ids COLON type_expr when_decl     { 1 }
+  | var_ids COLON type_expr when_decl     { ($1, $3, $4) }
   ;
 
 when_decl:
-  | WHEN csexpr                           { 1 }
-  | /* empty */                           { 1 }
+  | WHEN csexpr                           { Some $2 }
+  | /* empty */                           { None }
   ;
 
 csexpr:
-  | IDENT                                 { 1 }
-  | NOT IDENT                             { 1 }
-  | IDENT MATCH ident_nonlocal            { 1 }
+  | IDENT                                 { Is $1 }
+  | NOT IDENT                             { Not $2 }
+  | IDENT MATCH ident_nonlocal            { Match ($1, $3) }
   ;
 
 var_ids:
-  | var_id                                { 1 }
-  | var_id COMMA var_ids                  { 1 }
+  | var_id                                { [$1] }
+  | var_id COMMA var_ids                  { $1 :: $3 }
   ;
 
 var_id:
-  | CLOCK IDENT                           { 1 }
-  | IDENT                                 { 1 }
+  | CLOCK IDENT                           { Clock $2 }
+  | IDENT                                 { V $1 }
   ;
 
 optional_semicolon:
@@ -202,45 +203,45 @@ optional_semicolon:
   ;
 
 equations_single:
-  | equation                              { 1 }
+  | equation                              { [$1] }
   ;
 
 equations:
-  | equation SEMICOLON equations          { 1 }
-  | /* empty */                           { 1 }
+  | equation SEMICOLON equations          { $1 :: $3 }
+  | /* empty */                           { [] }
   ;
 
 equation:
-  | lhs EQ expr                           { 1 }
+  | lhs EQ expr                           { ($1, $3) }
   ;
 
 lhs:
-  | lhs_id                                { 1 }
-  | lhs_id COMMA lhs                      { 1 }
+  | lhs_id                                { [$1] }
+  | lhs_id COMMA lhs                      { $1 :: $3 }
   ;
 
 lhs_id:
-  | ident_local                           { 1 }
-  | UNDERSCORE                            { 1 }
+  | ident_local                           { I $1 }
+  | UNDERSCORE                            { Underscore }
   ;
 
 
 /* Local variables will shadow any non-local variable.
    There are no warning reported. */
 ident_expr:
-  | IDENT                                 { 1 }
+  | IDENT                                 { Var $1 }
   ;
 
 ident_nonlocal:
-  | IDENT                                 { 1 }
+  | IDENT                                 { $1 }
   ;
 
 ident_label:
-  | IDENT                                 { 1 }
+  | IDENT                                 { $1 }
   ;
 
 ident_local:
-  | IDENT                                 { 1 }
+  | IDENT                                 { $1 }
   ;
 
 clock_expr:
@@ -250,30 +251,30 @@ clock_expr:
   ;
 
 elist:
-  | /* empty */                           { 1 }
-  | expr                                  { 1 }
-  | expr COMMA elist                      { 1 }
+  | /* empty */                           { [] }
+  | expr                                  { [$1] }
+  | expr COMMA elist                      { $1 :: $3 }
 
 expr:
-  | ident_expr                            { 1 }
-  | const                                 { 1 }
-  | list_expr                             { 1 }
-  | tempo_expr                            { 1 }
-  | arith_expr                            { 1 }
-  | relation_expr                         { 1 }
-  | bool_expr                             { 1 }
-  | switch_expr                           { 1 }
-  | apply_expr                            { 1 }
+  | ident_expr                            { RValue $1 }
+  | const                                 { RValue $1 }
+  | list_expr                             { $1 }
+  | tempo_expr                            { Temp $1 }
+  | arith_expr                            { $1 }
+  | relation_expr                         { Temp $1 }
+  | bool_expr                             { Temp $1 }
+  | switch_expr                           { Temp $1 }
+  | apply_expr                            { Temp $1 }
 //   | array_expr      
 //   | struct_expr     
   ;
 
 const:
-  | TRUE                                  { 1 }
-  | FALSE                                 { 1 }
-  | CONST_CHAR                            { 1 }
-  | CONST_INT                             { 1 }
-  | CONST_REAL                            { 1 }
+  | TRUE                                  { True }
+  | FALSE                                 { False }
+  | CONST_CHAR                            { CChar $1 }
+  | CONST_INT                             { CInt $1 }
+  | CONST_REAL                            { CReal $1 }
   ;
 
 const_patt:
@@ -286,7 +287,7 @@ const_patt:
   ;
 
 list_expr:
-  | LPAREN elist RPAREN                   { 1 }
+  | LPAREN elist RPAREN                   { Elist $2 }
   ;
 
 tempo_expr:
@@ -298,16 +299,16 @@ tempo_expr:
   ;
 
 arith_expr:
-  | MINUS expr %prec UMINUS               { 1 }
-  | PLUS expr  %prec UPLUS                { 1 }
-  | INT expr                              { 1 }
-  | REAL expr                             { 1 }
-  | expr PLUS expr                        { 1 }
-  | expr MINUS expr                       { 1 }
-  | expr MULT expr                        { 1 }
-  | expr DIVIDE expr                      { 1 }
-  | expr DIV expr                         { 1 }
-  | expr MOD expr                         { 1 }
+  | MINUS expr %prec UMINUS               { Neg $2 }
+  | PLUS expr  %prec UPLUS                { $2 }
+  | INT expr                              { IntConv $2 } //TODO is this?
+  | REAL expr                             { RealConv $2 } //TODO
+  | expr PLUS expr                        { Add    ($1,$3) }
+  | expr MINUS expr                       { Minus  ($1,$3) }
+  | expr MULT expr                        { Mult   ($1,$3) }
+  | expr DIVIDE expr                      { Divide ($1,$3) }
+  | expr DIV expr                         { Div    ($1,$3) }
+  | expr MOD expr                         { Mod    ($1,$3) }
   ;
 
 relation_expr:
