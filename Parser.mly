@@ -96,11 +96,11 @@ type_decl0:
   ;
 
 type_expr:
-  | BOOL                                  { Bool }
-  | INT                                   { Int }
-  | REAL                                  { Real }
-  | CHAR                                  { Char }
-  | ident_nonlocal                        { Ident $1 }
+  | BOOL                                  { TBool }
+  | INT                                   { TInt }
+  | REAL                                  { TReal }
+  | CHAR                                  { TChar }
+  | ident_nonlocal                        { TIdent $1 }
 //  | LBRACE field_decls RBRACE           { 1 }
 //  | type_expr CARET expr                { 1 }
   ;
@@ -193,8 +193,8 @@ var_ids:
   ;
 
 var_id:
-  | CLOCK IDENT                           { Clock $2 }
-  | IDENT                                 { V $1 }
+  | CLOCK IDENT                           { ($2, true) }
+  | IDENT                                 { ($1, false) }
   ;
 
 optional_semicolon:
@@ -221,7 +221,7 @@ lhs:
   ;
 
 lhs_id:
-  | ident_local                           { I $1 }
+  | ident_local                           { LIdent $1 }
   | UNDERSCORE                            { Underscore }
   ;
 
@@ -229,7 +229,7 @@ lhs_id:
 /* Local variables will shadow any non-local variable.
    There are no warning reported. */
 ident_expr:
-  | IDENT                                 { Var $1 }
+  | IDENT                                 { VIdent $1 }
   ;
 
 ident_nonlocal:
@@ -270,11 +270,11 @@ expr:
   ;
 
 const:
-  | TRUE                                  { True }
-  | FALSE                                 { False }
-  | CONST_CHAR                            { CChar $1 }
-  | CONST_INT                             { CInt $1 }
-  | CONST_REAL                            { CReal $1 }
+  | TRUE                                  { VBool true }
+  | FALSE                                 { VBool false }
+  | CONST_CHAR                            { VChar $1 }
+  | CONST_INT                             { VInt $1 }
+  | CONST_REAL                            { VReal $1 }
   ;
 
 const_patt:
