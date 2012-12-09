@@ -1,6 +1,6 @@
 node main(x:int) returns (s:int);
 let
-    s = 2 * x;
+    s = 2 * x + 10;
 tel
 
 node abc(x:int) returns (s:int);

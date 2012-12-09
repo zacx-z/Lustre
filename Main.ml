@@ -6,6 +6,8 @@ open Type
 open Printf
 open Int32
 
+type context = { local : scope; }
+
 let find_replace func lst = match fold_left (fun (found, res) elem ->
         if found
         then (true, elem :: res)
@@ -23,20 +25,16 @@ let format_var_type = function
   | TReal -> "real"
   | TIdent v -> v
 
-let rec print_list func lst = match lst with
-    fst :: snd :: rest -> func fst; print_char ','; print_list func (snd::rest)
-  | [s] -> func s
-  | [] -> ()
 
 let print_scope { vars = vlst } =
     print_string "scope:\n";
-    iter (fun (name, var) -> print_string name) vlst;
+    print_list (fun (name, var) -> print_string name) vlst;
     print_newline ()
 
-let print_context = iter print_scope
+let print_context context = print_scope context.local
 
 let rec print_program program =
-    print_string (sprintf "The program contains %d nodes:\n" (length program.nodes));
+    printf "The program contains %d nodes:\n" (length program.nodes);
     iter print_node program.nodes
 
 and print_node (name, node) = print_node_head node.header
@@ -61,48 +59,117 @@ and print_params pms =
         print_string (format_var_type var_type);
         print_newline ()
 
-let lookup context name = assoc name (find (fun scp -> mem_assoc name scp.vars) context).vars
-and bind_var context (name:string) value : scope list =
-    find_replace (
-        fun scp -> let tbl = scp.vars in if mem_assoc name tbl
-        then Some { scp with vars = (name, {(assoc name tbl) with value = value}) :: (remove_assoc name tbl) }
-        else None) context
+let lookup context name = assoc name context.local.vars
+and bind_var context (name:string) value : context =
+    let tbl = context.local.vars in
+    { context with local =
+        { context.local with vars = (name, {(assoc name tbl) with value = value}) :: (remove_assoc name tbl) } }
 
-let get_val context x =
-    let check value =
-        if value == VUndefined then
-            raise (Failure "Undefined value")
-        else value
-    in match x with
-        VIdent varname -> check (lookup context varname).value
-      | t -> t
 
-let vmult context a b : value =
-    match (get_val context a, get_val context b) with
+let vmult a b =
+    match (a, b) with
         (VInt x, VInt y) -> VInt (mul x y)
+      | (VReal x, VReal y) -> VReal (x *. y)
       | _ -> raise (Failure "Can't multiply")
 
-let rec eval_expr context expr =
-    let eval = eval_expr context in
-    match expr with
-        Mult (a,b) -> vmult context (eval a) (eval b)
-      | RValue v -> v
+let vadd a b =
+    match (a, b) with
+        (VInt x, VInt y) -> VInt (add x y)
+      | (VReal x, VReal y) -> VReal (x +. y)
+      | _ -> raise (Failure "Can't add")
+
+let vminus a b =
+    match (a, b) with
+        (VInt x, VInt y) -> VInt (sub x y)
+      | (VReal x, VReal y) -> VReal (x -. y)
+      | _ -> raise (Failure "Can't minus")
+
+let vdivide a b =
+    match (a, b) with
+        (VReal x, VReal y) -> VReal (x /. y)
+      | _ -> raise (Failure "Can't divide")
+
+let vdiv a b =
+    match (a, b) with
+        (VInt x, VInt y) -> VInt (div x y)
+      | _ -> raise (Failure "Can't div")
+
+let vmod a b =
+    match (a, b) with
+        (VInt x, VInt y) -> VInt (rem x y)
+      | _ -> raise (Failure "Can't mod")
+
+let vneg a =
+    match a with
+        VInt x -> VInt (neg x)
+      | VReal x -> VReal (-.x)
+      | _ -> raise (Failure "Can't negate")
+
+let vreal_conv a =
+    match a with
+        VInt x -> VReal (to_float x)
+      | VReal x -> VReal x
+      | _ -> raise (Failure "Can't convert to real")
+
+let vint_conv a =
+    match a with
+        VInt x -> VInt x
+      | VReal x -> VInt (of_float x)
+      | _ -> raise (Failure "Can't convert to int")
+
+let rec eval_expr context eqs expr =
+    let get_val x =
+        let check var : value =
+            if var.value == VUndefined then
+                snd (solve_var context eqs var.name)
+            else var.value
+        in match x with
+            VIdent varname -> check (lookup context varname)
+          | t -> t
+            in let eval = eval_expr context eqs
+                in match expr with
+                    Add (a, b)    -> vadd (eval a) (eval b)
+                  | Minus (a, b)  -> vminus (eval a) (eval b)
+                  | Mult (a, b)   -> vmult (eval a) (eval b)
+                  | Divide (a, b) -> vdivide (eval a) (eval b)
+                  | Div (a, b)    -> vdiv (eval a) (eval b)
+                  | Mod (a, b)    -> vmod (eval a) (eval b)
+                  | Neg a         -> vneg (eval a)
+                  | RealConv a    -> vreal_conv (eval a)
+                  | IntConv a     -> vint_conv (eval a)
+                  | RValue v      -> get_val v
+                  | Elist lst     -> VList (map (eval_expr context eqs) lst)
+                  | Temp a        -> raise (Failure "Not supported")
+
+and solve_var context eqs varname : context * value =
+    let value = (lookup context varname).value in
+        if value == VUndefined then
+            let eq = find (fun (lhs, expr) -> exists
+            (function LIdent name -> name = varname | _ -> false) lhs) eqs in
+            let result = eval_expr context eqs (snd eq)
+            and bind_lhs context (vr,v) = match vr with
+                LIdent varname -> bind_var context varname v
+              | Underscore -> context
+            and lhs = fst eq
+            in ((match result with
+                VList lst -> fold_left bind_lhs context (combine lhs lst)
+              | t -> bind_lhs context (hd lhs, t)), result)
+        else (context, value)
 
 let run_node { header=(_, _, args, rets); equations=eqs } input =
     (* Build vars *)
     let vars_table = map (fun v -> (v.name, v))
     and bind_var_list vars vals = map (fun vr -> {vr with value = hd (assoc vr.name
 vals)}) vars in
-        let context = [{ vars = vars_table (bind_var_list (make_var_list args) input);
-                         stype = SInput };
-                       { vars = vars_table (make_var_list rets);
-                         stype = SOutput }]
-        in let result = fold_left (fun context (lhs, expr) -> match (hd lhs) with
-            LIdent name -> bind_var context name (eval_expr context expr)
-          | Underscore -> context) context eqs
-        in print_context result;
-           iter (fun (name, vr) -> print_value vr.value)
-                (find (fun scp -> scp.stype == SOutput) result).vars
+        let output_vars = make_var_list rets in
+        let context = { local = { vars = vars_table
+                                (append (bind_var_list (make_var_list args) input)
+                                (output_vars))} } in
+        let (context, output) = fold_left (fun (context, res) var -> let (c, r) = (solve_var context eqs var.name)
+                                                          in (c, r::res))
+                        (context, []) output_vars
+        in print_context context;
+           iter print_value output
 
 
 let _ =
@@ -115,7 +182,7 @@ let _ =
 
     with
     (Parse_Error str) ->
-        print_string (sprintf "Error: %s\n" str);
+        printf "Error: %s\n" str;
         exit 0
     | e ->
         print_string "Error!\n";
