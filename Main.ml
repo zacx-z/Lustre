@@ -67,28 +67,34 @@ and bind_var context (name:string) (value:value) : context =
         (name, {vr with value = (Val value) :: tl vr.value}) :: (remove_assoc name tbl) }
 
 
-let rec eval_expr context eqs expr =
+let rec eval_expr context eqs expr : context * value =
     let get_val x =
-        let check var : value =
+        let check var =
             match hd var.value with
-              Undefined -> snd (solve_var context eqs var.name)
-            | Val v -> v in
+              Undefined -> solve_var context eqs var.name
+            | Val v -> (context, v) in
         match x with
-            VIdent varname -> check (lookup context varname)
-          | t -> t in
-    let eval = eval_expr context eqs in
+          VIdent varname -> check (lookup context varname)
+        | t -> (context, t) in
+    let eval2 op a b =
+        let (c1, ra) = eval_expr context eqs a in
+        let (c2, rb) = eval_expr c1 eqs b in
+        (c2, op ra rb)
+    and eval1 op a =
+        let (c, r) = eval_expr context eqs a in
+        (c, op r) in
         match expr with
-          Add    (a, b) -> vadd (eval a) (eval b)
-        | Minus  (a, b) -> vminus (eval a) (eval b)
-        | Mult   (a, b) -> vmult (eval a) (eval b)
-        | Divide (a, b) -> vdivide (eval a) (eval b)
-        | Div    (a, b) -> vdiv (eval a) (eval b)
-        | Mod    (a, b) -> vmod (eval a) (eval b)
-        | Neg a         -> vneg (eval a)
-        | RealConv a    -> vreal_conv (eval a)
-        | IntConv a     -> vint_conv (eval a)
+          Add    (a, b) -> eval2 vadd a b
+        | Minus  (a, b) -> eval2 vminus a b
+        | Mult   (a, b) -> eval2 vmult a b
+        | Divide (a, b) -> eval2 vdivide a b
+        | Div    (a, b) -> eval2 vdiv a b
+        | Mod    (a, b) -> eval2 vmod a b
+        | Neg a         -> eval1 vneg a
+        | RealConv a    -> eval1 vreal_conv a
+        | IntConv a     -> eval1 vint_conv a
         | RValue v      -> get_val v
-        | Elist lst     -> VList (map (eval_expr context eqs) lst)
+        (*| Elist lst     -> VList (map (eval_expr context eqs) lst)*)
         | Temp a        -> raise (Failure "Not supported")
 
 and solve_var context eqs varname : context * value =
@@ -99,7 +105,7 @@ and solve_var context eqs varname : context * value =
                  (fun (lhs, expr) -> exists
                     (function LIdent name -> name = varname | _ -> false) lhs) eqs in
 
-        let result = eval_expr context eqs (snd eq)
+        let (context, result) = eval_expr context eqs (snd eq)
 
         and bind_lhs context (vr,v) = match vr with
           LIdent varname -> bind_var context varname v
