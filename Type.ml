@@ -104,3 +104,10 @@ let rec print_value value = match value with
   | VIdent v   -> printf "Undefined: %s" v
   | VList  v   -> print_string "VList: "; print_list print_value v
   | VNil       -> print_string "Nil"
+
+let format_var_type = function
+    TBool -> "bool"
+  | TInt -> "int"
+  | TChar -> "char"
+  | TReal -> "real"
+  | TIdent v -> v
