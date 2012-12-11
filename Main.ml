@@ -212,7 +212,7 @@ let transpose = function
 
 let _ =
     try
-        let lexbuf = Lexing.from_channel (open_in "input.lus")  in
+        let lexbuf = Lexing.from_channel (open_in "code.lus")  in
             let result = Parser.file Lexer.initial lexbuf in
                 print_program result;
                 let node = assoc "main" result.nodes
