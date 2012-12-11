@@ -13,7 +13,7 @@ and value = VBool of bool | VInt of int32 | VChar of char | VReal of float
           | VList of value list
           | VNil
 (* and stream = { run: value list -> stream * value } *)
-and expr = RValue   of value | Elist of expr list | Temp of int
+and expr = RValue   of value | Elist of expr list | Temp
          | IntConv  of expr
          | RealConv of expr
          | Neg      of expr
@@ -38,6 +38,8 @@ and expr = RValue   of value | Elist of expr list | Temp of int
          | Gt       of expr * expr
          | Lteq     of expr * expr
          | Gteq     of expr * expr
+
+         (*| If       of expr * expr * expr*)
 
 
 type node = {
@@ -215,3 +217,12 @@ let format_var_type = function
   | TChar -> "char"
   | TReal -> "real"
   | TIdent v -> v
+
+let parse str = match str.[0] with
+    '\'' -> assert (String.length str = 3 && str.[2] = '\''); VChar str.[1]
+  | c when c = 't' || c = 'f' -> VBool (c = 't')
+  | c when (let i = int_of_char c in i >= int_of_char '0' && i <= int_of_char '9')
+         -> if String.contains str '.'
+            then VReal (float_of_string str)
+            else VInt (of_int (int_of_string str))
+  | _ -> raise (Failure "Invalid input")

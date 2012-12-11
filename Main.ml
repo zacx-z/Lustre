@@ -12,10 +12,9 @@ type var = {
     vtype : var_type;
     value : tval list
 }
-and tval = Undefined | Val of value
+and tval = Undefined | Evaluating | Val of value
 and context = {
     local : (string * var) list;
-    input : (string * value list) list;
     clock : int
 }
 
@@ -53,49 +52,49 @@ and print_params pms = iter print_var_def pms and print_var_def (ids, var_type, 
         print_string (format_var_type var_type);
         print_newline ()
 
-let next_clock context =
+let next_clock context input =
     try
-        let grab_input name = if mem_assoc name context.input
-        then Val (hd (assoc name context.input))
+        let grab_input name = if mem_assoc name input
+        then Val (hd (assoc name input))
         else Undefined in
-        { local = map (fun (name, vr) -> (name, { vr with value = (grab_input vr.name) :: vr.value })) context.local;
-          input = map (fun (name, lst) -> (name, tl lst)) context.input;
+        ({ local = map (fun (name, vr) -> (name, { vr with value = (grab_input vr.name) :: vr.value })) context.local;
           clock = context.clock + 1
-        }
+        }, map (fun (name, lst) -> (name, tl lst)) input)
     with
         Failure t when t = "hd" || t = "tl" -> raise (Failure "reach the end of input")
 
 let pre context = let (prelst, cur) = split (map (fun (name, vr) ->
     ((name, { vr with value = tl vr.value }), hd vr.value)) context.local) in
-    ({ context with local = prelst; clock = context.clock - 1 }, cur)
+    ({ local = prelst; clock = context.clock - 1 }, cur)
 
-let restore_pre context cur = { context with local = map (fun ((name, vr), v) -> (name, { vr with value
+let restore_pre context cur = { local = map (fun ((name, vr), v) -> (name, { vr with value
     = v :: vr.value})) (combine context.local cur); clock = context.clock + 1 }
 
 let fstclock context = let (fstlst, rst) = split (map (fun (name, vr) ->
     (let rv = rev vr.value in (name, { vr with value = [hd rv] }), tl rv)) context.local) in
-    ({ context with local = fstlst; clock = 1 }, (context.clock, rst))
+    ({ local = fstlst; clock = 1 }, (context.clock, rst))
 
-let restore_fc context rst = { context with local = map (fun ((name, vr), rv) ->
+let restore_fc context rst = { local = map (fun ((name, vr), rv) ->
     (name, { vr with value = rev (vr.value @ rv) })) (combine context.local (snd rst)); clock = (fst rst) }
 
 let lookup context name = assoc name context.local
-and bind_var context (name:string) (value:value) : context =
+let bind_var context (name:string) (value:tval) : context =
     let tbl = context.local in
     let vr = assoc name tbl in
     { context with local =
-        (name, {vr with value = (Val value) :: tl vr.value}) :: (remove_assoc name tbl) }
+        (name, {vr with value = value :: tl vr.value}) :: (remove_assoc name tbl) }
 
 let hdv lst = if lst = [] then Val VNil else hd lst
 
 let rec eval_expr context eqs expr : context * value =
     let get_val x =
-        let check var =
-            match hdv var.value with
-              Undefined -> solve_var context eqs var.name
+        let eval varname =
+            match hdv (lookup context varname).value with
+              Undefined -> solve_var context eqs varname
+            | Evaluating -> raise (Failure "Cyclic dependence on calculating.")
             | Val v -> (context, v) in
         match x with
-          VIdent varname -> check (lookup context varname)
+          VIdent varname -> eval varname
         | t -> (context, t) in
     let eval2 op a b =
         let (c1, ra) = eval_expr context eqs a in
@@ -139,12 +138,13 @@ let rec eval_expr context eqs expr : context * value =
         | Lteq   (a, b) -> eval2 vlteq a b
         | Gteq   (a, b) -> eval2 vgteq a b
 
-        | Temp     a    -> raise (Failure "Not supported")
+        | Temp          -> raise (Failure "Not supported")
 
 and solve_var context eqs varname : context * value =
     let value = hdv (lookup context varname).value in
     match value with
       Undefined -> (
+        let context = bind_var context varname Evaluating in
         let eq = find
                  (fun (lhs, expr) -> exists
                     (function LIdent name -> name = varname | _ -> false) lhs) eqs in
@@ -152,7 +152,7 @@ and solve_var context eqs varname : context * value =
         let (context, result) = eval_expr context eqs (snd eq)
 
         and bind_lhs (vr,v) context = match vr with
-          LIdent varname -> bind_var context varname v
+          LIdent varname -> bind_var context varname (Val v)
         | Underscore -> context
 
         and lhs = fst eq in
@@ -161,6 +161,7 @@ and solve_var context eqs varname : context * value =
           VList lst -> (fold_right bind_lhs (combine lhs lst) context, assoc (LIdent varname) (combine lhs lst))
         | t -> (bind_lhs (hd lhs, t) context, t))
     | Val v -> (context, v)
+    | _ -> assert false
 
 let run_node { header=(_, _, args, rets); locals = locals; equations=eqs } input =
     (* Build vars *)
@@ -170,9 +171,8 @@ let run_node { header=(_, _, args, rets); locals = locals; equations=eqs } input
                            (concat [(make_var_list args);
                                     (output_vars);
                                     (make_var_list locals)]);
-                    input = input;
                     clock = 0 } in
-    let rec cycle context =
+    let rec cycle (context, input) =
     let (context, output) = fold_right (fun var (context, res) -> let (c, r) =
         (solve_var context eqs var.name)
                                                         in (c, r::res))
@@ -180,16 +180,45 @@ let run_node { header=(_, _, args, rets); locals = locals; equations=eqs } input
 
     print_list print_value output;
     print_newline ();
-    cycle (next_clock context) in cycle (next_clock context)
+    cycle (next_clock context input) in cycle (next_clock context input)
 
+let split_string c str =
+    let prepend i = function
+        | (a, b) :: rst when a = i + 1 -> (i, b) :: rst
+        | lst -> (i, i + 1) :: lst
+        in
+    let rec split' c str i =
+        if i = String.length str
+        then []
+        else let ch = String.get str i in
+            if ch = c
+            then split' c str (i + 1)
+            else prepend i (split' c str (i + 1))
+    in map (fun (a, b) -> String.sub str a (b - a)) (split' c str 0)
+
+let read_data_in fname =
+    let parse_line str = map parse (split_string ' ' str) in
+    let i = open_in fname in
+    let res = (let rec get () =
+        try let n = parse_line (input_line i) in n :: get ()
+        with End_of_file -> [] in
+        get ()) in close_in i; res
+
+let transpose = function
+      [] -> []
+    | matrix -> fold_right (fun line res -> map (fun (l, r) -> l :: r)
+                           (combine line res)) matrix (map (fun l -> []) (hd matrix))
 
 let _ =
     try
         let lexbuf = Lexing.from_channel (open_in "input.lus")  in
             let result = Parser.file Lexer.initial lexbuf in
                 print_program result;
-                run_node (assoc "main" result.nodes) [("x", map (fun x ->
-                    VInt (of_int x)) [10;3;56;4;3;2])]
+                let node = assoc "main" result.nodes
+                and get_args (_, _, args, _) = args in
+                let in_argsname = (map (fun vr -> vr.name) (make_var_list (get_args node.header))) in
+                run_node node
+                         (combine in_argsname (transpose (read_data_in "in.data")))
 
     with
     (Parse_Error str) ->

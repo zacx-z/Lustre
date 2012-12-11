@@ -6,7 +6,3 @@ let
     v = 2 -> pre (1 -> pre c);
 tel
 
-node abc(x:int) returns (s:int);
-let
-    s = 2 * x;
-tel

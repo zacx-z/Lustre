@@ -263,8 +263,8 @@ expr:
   | arith_expr                            { $1 }
   | relation_expr                         { $1 }
   | bool_expr                             { $1 }
-  | switch_expr                           { Temp $1 }
-  | apply_expr                            { Temp $1 }
+  | switch_expr                           { $1 }
+  | apply_expr                            { Temp }
 //   | array_expr      
 //   | struct_expr     
   ;
@@ -293,7 +293,7 @@ list_expr:
 tempo_expr:
   | PRE expr                              { Pre $2 }
   | expr ARROW expr                       { Arrow ($1, $3) }
-  | expr WHEN clock_expr                  { Temp 1 }
+  | expr WHEN clock_expr                  { Temp }
 //  | FBY LPAREN elist SEMICOLON CONST_INT SEMICOLON elist RPAREN
 //                            
   ;
@@ -328,8 +328,8 @@ bool_expr:
   ;
 
 switch_expr:
-  | IF expr THEN expr ELSE expr           { 1 }
-  | LPAREN CASE expr OF case_exprs RPAREN { 1 }
+  | IF expr THEN expr ELSE expr           { Temp (*If ($2, $4, $6)*) }
+  | LPAREN CASE expr OF case_exprs RPAREN { Temp }
   ;
 
 case_exprs:
