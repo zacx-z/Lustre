@@ -1,8 +1,8 @@
-node main(x:int) returns (s, v:int)
+node main(x:int; a:int) returns (s, v:int)
 var c : int;
 let
     c = 2 * x + 10;
     s = c;
-    v = 2 -> pre (1 -> pre c);
+    v = 2 -> pre (1 -> pre a);
 tel
 

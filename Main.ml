@@ -81,6 +81,7 @@ let lookup context name = assoc name context.local
 let bind_var context (name:string) (value:tval) : context =
     let tbl = context.local in
     let vr = assoc name tbl in
+    (match value with Val v -> assert (check_type vr.vtype v) | _ -> ());
     { context with local =
         (name, {vr with value = value :: tl vr.value}) :: (remove_assoc name tbl) }
 
@@ -184,7 +185,7 @@ let run_node { header=(_, _, args, rets); locals = locals; equations=eqs } input
 
 let split_string c str =
     let prepend i = function
-        | (a, b) :: rst when a = i + 1 -> (i, b) :: rst
+          (a, b) :: rst when a = i + 1 -> (i, b) :: rst
         | lst -> (i, i + 1) :: lst
         in
     let rec split' c str i =

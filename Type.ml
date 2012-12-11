@@ -226,3 +226,10 @@ let parse str = match str.[0] with
             then VReal (float_of_string str)
             else VInt (of_int (int_of_string str))
   | _ -> raise (Failure "Invalid input")
+
+let check_type vtype value = match (vtype, value) with
+    (TBool, VBool _) -> true
+  | (TInt,  VInt _)  -> true
+  | (TChar, VChar _) -> true
+  | (TReal, VReal _) -> true
+  | _ -> false
