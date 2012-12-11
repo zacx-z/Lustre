@@ -6,7 +6,7 @@ type node_type = Node | Function
 and var_def = var_id list * var_type * cs_expr option
 and var_id = string * bool
 and var_type = TBool | TInt | TChar | TReal | TIdent of string
-and cs_expr = Is of string | Not of string | Match of string * string
+and cs_expr = CIs of string | CNot of string | CMatch of string * string
 and lvalue = LIdent of string | Underscore
 and value = VBool of bool | VInt of int32 | VChar of char | VReal of float
           | VIdent of string
@@ -24,9 +24,25 @@ and expr = RValue   of value | Elist of expr list | Temp of int
          | Div      of expr * expr
          | Mod      of expr * expr
 
+         | Pre      of expr
+         | Arrow    of expr * expr
+
+         | Not      of expr
+         | And      of expr * expr
+         | Or       of expr * expr
+         | Xor      of expr * expr
+
+         | Eq       of expr * expr
+         | Ne       of expr * expr
+         | Lt       of expr * expr
+         | Gt       of expr * expr
+         | Lteq     of expr * expr
+         | Gteq     of expr * expr
+
 
 type node = {
     header : node_type * string * var_def list * var_def list;
+    locals : var_def list;
     equations : (lvalue list * expr) list
 }
 
@@ -38,55 +54,143 @@ type program = {
 (* Calculation *)
 let vmult a b =
     match (a, b) with
-        (VInt x, VInt y) -> VInt (mul x y)
-      | (VReal x, VReal y) -> VReal (x *. y)
-      | _ -> raise (Failure "Can't multiply")
+      (VInt x, VInt y) -> VInt (mul x y)
+    | (VReal x, VReal y) -> VReal (x *. y)
+    | (a, b) when a = VNil || b = VNil -> VNil
+    | _ -> raise (Failure "Can't multiply")
 
 let vadd a b =
     match (a, b) with
-        (VInt x, VInt y) -> VInt (add x y)
-      | (VReal x, VReal y) -> VReal (x +. y)
-      | _ -> raise (Failure "Can't add")
+      (VInt x, VInt y) -> VInt (add x y)
+    | (VReal x, VReal y) -> VReal (x +. y)
+    | (a, b) when a = VNil || b = VNil -> VNil
+    | _ -> raise (Failure "Can't add")
 
 let vminus a b =
     match (a, b) with
-        (VInt x, VInt y) -> VInt (sub x y)
-      | (VReal x, VReal y) -> VReal (x -. y)
-      | _ -> raise (Failure "Can't minus")
+      (VInt x, VInt y) -> VInt (sub x y)
+    | (VReal x, VReal y) -> VReal (x -. y)
+    | (a, b) when a = VNil || b = VNil -> VNil
+    | _ -> raise (Failure "Can't minus")
 
 let vdivide a b =
     match (a, b) with
-        (VReal x, VReal y) -> VReal (x /. y)
-      | _ -> raise (Failure "Can't divide")
+      (VReal x, VReal y) -> VReal (x /. y)
+    | (a, b) when a = VNil || b = VNil -> VNil
+    | _ -> raise (Failure "Can't divide")
 
 let vdiv a b =
     match (a, b) with
-        (VInt x, VInt y) -> VInt (div x y)
-      | _ -> raise (Failure "Can't div")
+      (VInt x, VInt y) -> VInt (div x y)
+    | (a, b) when a = VNil || b = VNil -> VNil
+    | _ -> raise (Failure "Can't div")
 
 let vmod a b =
     match (a, b) with
-        (VInt x, VInt y) -> VInt (rem x y)
-      | _ -> raise (Failure "Can't mod")
+      (VInt x, VInt y) -> VInt (rem x y)
+    | (a, b) when a = VNil || b = VNil -> VNil
+    | _ -> raise (Failure "Can't mod")
 
 let vneg a =
     match a with
-        VInt x -> VInt (neg x)
-      | VReal x -> VReal (-.x)
-      | _ -> raise (Failure "Can't negate")
+      VInt x -> VInt (neg x)
+    | VReal x -> VReal (-.x)
+    | VNil -> VNil
+    | _ -> raise (Failure "Can't negate")
 
 let vreal_conv a =
     match a with
-        VInt x -> VReal (to_float x)
-      | VReal x -> VReal x
-      | _ -> raise (Failure "Can't convert to real")
+      VInt x -> VReal (to_float x)
+    | VReal x -> VReal x
+    | VNil -> VNil
+    | _ -> raise (Failure "Can't convert to real")
 
 let vint_conv a =
     match a with
-        VInt x -> VInt x
-      | VReal x -> VInt (of_float x)
-      | _ -> raise (Failure "Can't convert to int")
+      VInt x -> VInt x
+    | VReal x -> VInt (of_float x)
+    | VNil -> VNil
+    | _ -> raise (Failure "Can't convert to int")
 
+
+let vnot a =
+    match a with
+      VBool x -> VBool (not x)
+    | VNil -> VNil
+    | _ -> raise (Failure "Can't Not")
+
+let vand a b =
+    match (a, b) with
+      (VBool x, VBool y) -> VBool (x && y)
+    | (VNil, _) -> VNil
+    | (_, VNil) -> VNil
+    | _ -> raise (Failure "Can't And")
+
+let vor a b =
+    match (a, b) with
+      (VBool x, VBool y) -> VBool (x || y)
+    | (VNil, _) -> VNil
+    | (_, VNil) -> VNil
+    | _ -> raise (Failure "Can't Or")
+
+let vxor a b =
+    match (a, b) with
+      (VBool x, VBool y) -> VBool ((x && (not y)) || ((not x) && y))
+    | (VNil, _) -> VNil
+    | (_, VNil) -> VNil
+    | _ -> raise (Failure "Can't Xor")
+
+let veq a b =
+    match (a, b) with
+      (VNil, _) -> VNil
+    | (_, VNil) -> VNil
+    | (VBool x, VBool y) -> VBool (x = y)
+    | (VInt x, VInt y)   -> VBool (compare x y = 0)
+    | (VReal x, VReal y) -> VBool (x = y)
+    | (VChar x, VChar y) -> VBool (x = y)
+    | _ -> raise (Failure "Can't eq")
+
+let vne a b =
+    match (a, b) with
+      (VNil, _) -> VNil
+    | (_, VNil) -> VNil
+    | (VBool x, VBool y) -> VBool (x != y)
+    | (VInt x, VInt y)   -> VBool (compare x y != 0)
+    | (VReal x, VReal y) -> VBool (x != y)
+    | (VChar x, VChar y) -> VBool (x != y)
+    | _ -> raise (Failure "Can't ne")
+
+let vlt a b =
+    match (a, b) with
+      (VNil, _) -> VNil
+    | (_, VNil) -> VNil
+    | (VInt x, VInt y)   -> VBool (compare x y < 0)
+    | (VReal x, VReal y) -> VBool (x < y)
+    | _ -> raise (Failure "Can't lt")
+
+let vgt a b =
+    match (a, b) with
+      (VNil, _) -> VNil
+    | (_, VNil) -> VNil
+    | (VInt x, VInt y)   -> VBool (compare x y > 0)
+    | (VReal x, VReal y) -> VBool (x > y)
+    | _ -> raise (Failure "Can't gt")
+
+let vlteq a b =
+    match (a, b) with
+      (VNil, _) -> VNil
+    | (_, VNil) -> VNil
+    | (VInt x, VInt y)   -> VBool (compare x y <= 0)
+    | (VReal x, VReal y) -> VBool (x <= y)
+    | _ -> raise (Failure "Can't gteq")
+
+let vgteq a b =
+    match (a, b) with
+      (VNil, _) -> VNil
+    | (_, VNil) -> VNil
+    | (VInt x, VInt y)   -> VBool (compare x y >= 0)
+    | (VReal x, VReal y) -> VBool (x >= y)
+    | _ -> raise (Failure "Can't gteq")
 
 (* Helpers *)
 let node_name (_, name, _, _) = name (* receive header and return name*)

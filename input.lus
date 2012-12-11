@@ -1,7 +1,9 @@
-node main(x:int) returns (s, v:int);
+node main(x:int) returns (s, v:int)
+var c : int;
 let
-    s = 2 * x + 10;
-    v = x * 3;
+    c = 2 * x + 10;
+    s = c;
+    v = 2 -> pre (1 -> pre c);
 tel
 
 node abc(x:int) returns (s:int);

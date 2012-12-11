@@ -130,13 +130,13 @@ const_decl0:
 
 user_op_decl:
   | node_header SEMICOLON
-  { { header=$1; equations=[] } }
+  { { header=$1; locals = []; equations=[] } }
   | node_header equations_single SEMICOLON
-  { { header=$1; equations=[] } }
+  { { header=$1; locals = []; equations=[] } }
   | node_header optional_semicolon LET equations TEL optional_semicolon
-  { { header=$1; equations=$4 } }
+  { { header=$1; locals = []; equations=$4 } }
   | node_header2 optional_semicolon LET equations TEL optional_semicolon
-  { { header=$1; equations=$4 } }
+  { { header=fst $1; locals = snd $1; equations=$4 } }
   ;
 
 node_header:
@@ -144,7 +144,7 @@ node_header:
   ;
 
 node_header2:
-  | node_header local_block               { $1 }
+  | node_header local_block               { ($1, $2) }
   ;
 
 /* Ignoring the difference between a node and a function */
@@ -154,12 +154,12 @@ op_kind:
   ;
 
 local_block:
-  | VAR var_decls2                        { 1 }
+  | VAR var_decls2                        { $2 }
   ;
 
 var_decls2:
-  | /* empty */                           { 1 }
-  | var_decl SEMICOLON var_decls2         { 1 }
+  | /* empty */                           { [] }
+  | var_decl SEMICOLON var_decls2         { $1 :: $3 }
   ;
 
 params:
@@ -182,9 +182,9 @@ when_decl:
   ;
 
 csexpr:
-  | IDENT                                 { Is $1 }
-  | NOT IDENT                             { Not $2 }
-  | IDENT MATCH ident_nonlocal            { Match ($1, $3) }
+  | IDENT                                 { CIs $1 }
+  | NOT IDENT                             { CNot $2 }
+  | IDENT MATCH ident_nonlocal            { CMatch ($1, $3) }
   ;
 
 var_ids:
@@ -259,10 +259,10 @@ expr:
   | ident_expr                            { RValue $1 }
   | const                                 { RValue $1 }
   | list_expr                             { $1 }
-  | tempo_expr                            { Temp $1 }
+  | tempo_expr                            { $1 }
   | arith_expr                            { $1 }
-  | relation_expr                         { Temp $1 }
-  | bool_expr                             { Temp $1 }
+  | relation_expr                         { $1 }
+  | bool_expr                             { $1 }
   | switch_expr                           { Temp $1 }
   | apply_expr                            { Temp $1 }
 //   | array_expr      
@@ -291,9 +291,9 @@ list_expr:
   ;
 
 tempo_expr:
-  | PRE expr                              { 1 }
-  | expr ARROW expr                       { 1 }
-  | expr WHEN clock_expr                  { 1 }
+  | PRE expr                              { Pre $2 }
+  | expr ARROW expr                       { Arrow ($1, $3) }
+  | expr WHEN clock_expr                  { Temp 1 }
 //  | FBY LPAREN elist SEMICOLON CONST_INT SEMICOLON elist RPAREN
 //                            
   ;
@@ -312,19 +312,19 @@ arith_expr:
   ;
 
 relation_expr:
-  | expr EQ expr                          { 1 }
-  | expr NE expr                          { 1 }
-  | expr LT expr                          { 1 }
-  | expr GT expr                          { 1 }
-  | expr LTEQ expr                        { 1 }
-  | expr GTEQ expr                        { 1 }
+  | expr EQ expr                          { Eq ($1, $3) }
+  | expr NE expr                          { Ne ($1, $3) }
+  | expr LT expr                          { Lt ($1, $3) }
+  | expr GT expr                          { Gt ($1, $3) }
+  | expr LTEQ expr                        { Lteq ($1, $3) }
+  | expr GTEQ expr                        { Gteq ($1, $3) }
   ;
 
 bool_expr:
-  | NOT expr                              { 1 }
-  | expr AND expr                         { 1 }
-  | expr OR expr                          { 1 }
-  | expr XOR expr                         { 1 }
+  | NOT expr                              { Not $2 }
+  | expr AND expr                         { And ($1, $3) }
+  | expr OR expr                          { Or ($1, $3) }
+  | expr XOR expr                         { Xor ($1, $3) }
   ;
 
 switch_expr:
