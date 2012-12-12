@@ -2,6 +2,7 @@ open List
 open Printf
 open Int32
 
+
 type node_type = Node | Function
 and var_def = var_id list * var_type * cs_expr option
 and var_id = string * bool
@@ -26,7 +27,6 @@ and expr = RValue   of value | Elist of expr list | Temp
 
          | Pre      of expr
          | Arrow    of expr * expr
-         | When     of expr * expr
 
          | Not      of expr
          | And      of expr * expr
@@ -56,44 +56,51 @@ type program = {
     types : int list
 }
 
+
 (* Calculation *)
 let vmult a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (mul x y)
     | (VReal x, VReal y) -> VReal (x *. y)
-    | (VNil, VNil) -> VNil
+    | (VNil, _) -> VNil
+    | (_, VNil) -> VNil
     | _ -> raise (Failure "Can't multiply")
 
 let vadd a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (add x y)
     | (VReal x, VReal y) -> VReal (x +. y)
-    | (VNil, VNil) -> VNil
+    | (VNil, _) -> VNil
+    | (_, VNil) -> VNil
     | _ -> raise (Failure "Can't add")
 
 let vminus a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (sub x y)
     | (VReal x, VReal y) -> VReal (x -. y)
-    | (VNil, VNil) -> VNil
+    | (VNil, _) -> VNil
+    | (_, VNil) -> VNil
     | _ -> raise (Failure "Can't minus")
 
 let vdivide a b =
     match (a, b) with
       (VReal x, VReal y) -> VReal (x /. y)
-    | (VNil, VNil) -> VNil
+    | (VNil, _) -> VNil
+    | (_, VNil) -> VNil
     | _ -> raise (Failure "Can't divide")
 
 let vdiv a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (div x y)
-    | (VNil, VNil) -> VNil
+    | (VNil, _) -> VNil
+    | (_, VNil) -> VNil
     | _ -> raise (Failure "Can't div")
 
 let vmod a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (rem x y)
-    | (VNil, VNil) -> VNil
+    | (VNil, _) -> VNil
+    | (_, VNil) -> VNil
     | _ -> raise (Failure "Can't mod")
 
 let vneg a =
@@ -127,24 +134,28 @@ let vnot a =
 let vand a b =
     match (a, b) with
       (VBool x, VBool y) -> VBool (x && y)
-    | (VNil, VNil) -> VNil
+    | (VNil, _) -> VNil
+    | (_, VNil) -> VNil
     | _ -> raise (Failure "Can't And")
 
 let vor a b =
     match (a, b) with
       (VBool x, VBool y) -> VBool (x || y)
-    | (VNil, VNil) -> VNil
+    | (VNil, _) -> VNil
+    | (_, VNil) -> VNil
     | _ -> raise (Failure "Can't Or")
 
 let vxor a b =
     match (a, b) with
       (VBool x, VBool y) -> VBool ((x && (not y)) || ((not x) && y))
-    | (VNil, VNil) -> VNil
+    | (VNil, _) -> VNil
+    | (_, VNil) -> VNil
     | _ -> raise (Failure "Can't Xor")
 
 let veq a b =
     match (a, b) with
-      (VNil, VNil) -> VNil
+      (VNil, _) -> VNil
+    | (_, VNil) -> VNil
     | (VBool x, VBool y) -> VBool (x = y)
     | (VInt x, VInt y)   -> VBool (compare x y = 0)
     | (VReal x, VReal y) -> VBool (x = y)
@@ -153,7 +164,8 @@ let veq a b =
 
 let vne a b =
     match (a, b) with
-      (VNil, VNil) -> VNil
+      (VNil, _) -> VNil
+    | (_, VNil) -> VNil
     | (VBool x, VBool y) -> VBool (x != y)
     | (VInt x, VInt y)   -> VBool (compare x y != 0)
     | (VReal x, VReal y) -> VBool (x != y)
@@ -162,28 +174,32 @@ let vne a b =
 
 let vlt a b =
     match (a, b) with
-      (VNil, VNil) -> VNil
+      (VNil, _) -> VNil
+    | (_, VNil) -> VNil
     | (VInt x, VInt y)   -> VBool (compare x y < 0)
     | (VReal x, VReal y) -> VBool (x < y)
     | _ -> raise (Failure "Can't lt")
 
 let vgt a b =
     match (a, b) with
-      (VNil, VNil) -> VNil
+      (VNil, _) -> VNil
+    | (_, VNil) -> VNil
     | (VInt x, VInt y)   -> VBool (compare x y > 0)
     | (VReal x, VReal y) -> VBool (x > y)
     | _ -> raise (Failure "Can't gt")
 
 let vlteq a b =
     match (a, b) with
-      (VNil, VNil) -> VNil
+      (VNil, _) -> VNil
+    | (_, VNil) -> VNil
     | (VInt x, VInt y)   -> VBool (compare x y <= 0)
     | (VReal x, VReal y) -> VBool (x <= y)
     | _ -> raise (Failure "Can't gteq")
 
 let vgteq a b =
     match (a, b) with
-      (VNil, VNil) -> VNil
+      (VNil, _) -> VNil
+    | (_, VNil) -> VNil
     | (VInt x, VInt y)   -> VBool (compare x y >= 0)
     | (VReal x, VReal y) -> VBool (x >= y)
     | _ -> raise (Failure "Can't gteq")

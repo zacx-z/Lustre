@@ -6,6 +6,20 @@ open Type
 open Printf
 open Int32
 
+let find_replace func lst = match fold_left (fun (found, res) elem ->
+        if found
+        then (true, elem :: res)
+        else match func elem with
+            None -> (false, elem :: res)
+        | Some ne -> (true, ne :: res)
+    ) (false, []) lst with
+  (true, res) -> res
+| (false, _) -> raise Not_found
+
+exception Type_mismatch of var_type * value
+exception Cyclic_dependence of string
+exception Invalid_if of expr
+
 type var = {
     name : string;
     is_clock : bool;
@@ -18,16 +32,29 @@ and context = {
     clock : int
 }
 
+let assert_type vtype value = match value with
+  Val v -> if not (check_type vtype v)
+           then raise (Type_mismatch (vtype, v))
+           else ()
+| _ -> ()
+
 let make_var (namelist, t, csexpr) = map (function varid -> 
     {name = (fst varid); is_clock = (snd varid); vtype = t; value = [] }) namelist
 let make_var_list lst = concat (map make_var lst)
 
+let print_tval = function
+    Undefined -> print_string "Undefined"
+  | Evaluating -> print_string "Evaluating"
+  | Val v -> print_value v
+
 let print_var_list vlst  =
     print_string "vars:\n";
-    print_list (fun (name, var) -> print_string name) vlst;
+    iter (fun (name, var) -> printf "%s:  " name; print_list print_tval var.value;print_newline() ) vlst;
     print_newline ()
 
-let print_context context = print_var_list context.local
+let print_context context =
+    print_string "-------- context --------\n";
+    print_var_list context.local
 
 let rec print_program program =
     printf "The program contains %d nodes:\n" (length program.nodes);
@@ -57,8 +84,10 @@ let next_clock context input =
         let grab_input name = if mem_assoc name input
         then Val (hd (assoc name input))
         else Undefined in
-        ({ local = map (fun (name, vr) -> (name, { vr with value = (grab_input vr.name) :: vr.value })) context.local;
-          clock = context.clock + 1
+        ({ local = map (fun (name, vr) -> (name, { vr with value =
+                                                   let v = grab_input vr.name in assert_type vr.vtype v; v :: vr.value
+                                           })) context.local;
+           clock = context.clock + 1
         }, map (fun (name, lst) -> (name, tl lst)) input)
     with
         Failure t when t = "hd" || t = "tl" -> raise (Failure "reach the end of input")
@@ -84,13 +113,11 @@ let restore_fc context rst = { local = map (fun ((name, vr), rv) ->
 let lookup context name = assoc name context.local
 let bind_var context (name:string) (value:tval) : context =
     let tbl = context.local in
-    let vr = assoc name tbl in
-    (match value with Val v -> if not (check_type vr.vtype v)
-                               then raise (Failure (format_var_type vr.vtype))
-                               else ()
-                    | _ -> ());
     { context with local =
-        (name, {vr with value = value :: tl vr.value}) :: (remove_assoc name tbl) }
+        find_replace (fun (_n, vr) -> if _n = name
+            then (assert_type vr.vtype value;
+                 Some (name, {vr with value = value :: tl vr.value}))
+            else None ) tbl }
 
 let hdv lst = if lst = [] then Val VNil else hd lst
 
@@ -99,7 +126,7 @@ let rec eval_expr context eqs expr : context * value =
         let eval varname =
             match hdv (lookup context varname).value with
               Undefined -> solve_var context eqs varname
-            | Evaluating -> raise (Failure "Cyclic dependence on calculating.")
+            | Evaluating -> print_context context;raise (Cyclic_dependence varname)
             | Val v -> (context, v) in
         match x with
           VIdent varname -> eval varname
@@ -127,15 +154,11 @@ let rec eval_expr context eqs expr : context * value =
                            let (c, r) = eval_expr context eqs expr in (c, r ::
                                res) ) lst (context, [])) in (c, VList r)
 
-        | Pre        a  -> let (c', r) = eval_expr context eqs a in (*TODO *)
-                           if r = VNil
-                           then (c', VNil)
-                           else let rec eval_pre context =
+        | Pre        a  -> let eval_pre context =
                                let (precon, cur) = pre context in
-                               let (c, r) = eval_expr precon eqs a in
-                                 if r = VNil && c.clock > 0 then let (c, r) = eval_pre c in (restore_pre c cur, r)
-                                 else (restore_pre c cur, r)
-                           in eval_pre c'
+                               let (c, r) = eval_expr precon eqs a in (restore_pre c cur, r)
+                           in eval_pre context
+
         | Arrow  (a, b) -> if context.clock == 1
                            then let (fstcon, rst) = fstclock context in
                                 let (c, r) = eval_expr fstcon eqs a in (restore_fc fstcon rst, r)
@@ -155,7 +178,7 @@ let rec eval_expr context eqs expr : context * value =
 
         | If  (c, a, b) -> let (con, cv) = eval_expr context eqs c in (match cv with
                              VBool v -> if v then eval_expr con eqs a else eval_expr con eqs b
-                           | _ -> raise (Failure "Invalid parameter for if"))
+                           | _ -> raise (Invalid_if c))
         | Case   (a, p) -> let (c, v) = eval_expr context eqs a in
                            let (_, b) = find (function (PUnderscore, _) -> true | (PValue t, _) -> t = v) p in
                            eval_expr c eqs b

@@ -2,7 +2,7 @@ node main(x:int; a:int) returns (s, v:int)
 var c : int;
 let
     c = 2 * x + 10;
-    s = pre v;
-    v = 1 -> pre (pre a);
+    s = 1 -> (pre s + 1);
+    v = 1 -> a;
 tel
 
