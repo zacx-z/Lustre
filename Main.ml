@@ -19,6 +19,8 @@ let find_replace func lst = match fold_left (fun (found, res) elem ->
 exception Type_mismatch of var_type * value
 exception Cyclic_dependence of string
 exception Invalid_if of expr
+exception Not_in_equation of string
+exception Case_not_match of value
 
 type var = {
     name : string;
@@ -180,7 +182,8 @@ let rec eval_expr context eqs expr : context * value =
                              VBool v -> if v then eval_expr con eqs a else eval_expr con eqs b
                            | _ -> raise (Invalid_if c))
         | Case   (a, p) -> let (c, v) = eval_expr context eqs a in
-                           let (_, b) = find (function (PUnderscore, _) -> true | (PValue t, _) -> t = v) p in
+                           let (_, b) = try find (function (PUnderscore, _) -> true | (PValue t, _) -> t = v) p
+                                        with Not_found -> raise (Case_not_match v) in
                            eval_expr c eqs b
 
         | Temp          -> raise (Failure "Not supported")
@@ -190,9 +193,10 @@ and solve_var context eqs varname : context * value =
     match value with
       Undefined -> (
         let context = bind_var context varname Evaluating in
-        let eq = find
+        let eq = try find
                  (fun (lhs, expr) -> exists
-                    (function LIdent name -> name = varname | _ -> false) lhs) eqs in
+                    (function LIdent name -> name = varname | _ -> false) lhs) eqs
+                 with Not_found -> raise (Not_in_equation varname) in
 
         let (context, result) = eval_expr context eqs (snd eq)
 
