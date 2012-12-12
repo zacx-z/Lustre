@@ -1,5 +1,6 @@
 %{
 open Type
+open Int32
 %}
 
 /* package */
@@ -278,12 +279,12 @@ const:
   ;
 
 const_patt:
-  | TRUE                                  { 1 }
-  | FALSE                                 { 1 }
-  | CONST_CHAR                            { 1 }
-  | CONST_INT                             { 1 }
-  | MINUS CONST_INT                       { 1 }
-  | CONST_REAL                            { 1 }
+  | TRUE                                  { VBool true }
+  | FALSE                                 { VBool false }
+  | CONST_CHAR                            { VChar $1 }
+  | CONST_INT                             { VInt $1 }
+  | MINUS CONST_INT                       { VInt (neg $2) }
+  | CONST_REAL                            { VReal $1 }
   ;
 
 list_expr:
@@ -328,18 +329,18 @@ bool_expr:
   ;
 
 switch_expr:
-  | IF expr THEN expr ELSE expr           { Temp (*If ($2, $4, $6)*) }
-  | LPAREN CASE expr OF case_exprs RPAREN { Temp }
+  | IF expr THEN expr ELSE expr           { If ($2, $4, $6) }
+  | LPAREN CASE expr OF case_exprs RPAREN { Case ($3, $5) }
   ;
 
 case_exprs:
-  | PIPE UNDERSCORE COLON expr            { 1 }
-  | PIPE case_expr                        { 1 }
-  | PIPE case_expr case_exprs             { 1 }
+  | PIPE UNDERSCORE COLON expr            { [(PUnderscore, $4)] }
+  | PIPE case_expr                        { [$2] }
+  | PIPE case_expr case_exprs             { $2 :: $3 }
   ;
 
 case_expr:
-  | const_patt COLON expr                 { 1 }
+  | const_patt COLON expr                 { (PValue $1, $3) }
   ;
 
 apply_expr:

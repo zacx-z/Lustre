@@ -39,7 +39,9 @@ and expr = RValue   of value | Elist of expr list | Temp
          | Lteq     of expr * expr
          | Gteq     of expr * expr
 
-         (*| If       of expr * expr * expr*)
+         | If       of expr * expr * expr
+         | Case     of expr * (pattern * expr) list
+and pattern = PUnderscore | PValue of value
 
 
 type node = {
@@ -58,39 +60,39 @@ let vmult a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (mul x y)
     | (VReal x, VReal y) -> VReal (x *. y)
-    | (a, b) when a = VNil || b = VNil -> VNil
+    | (VNil, VNil) -> VNil
     | _ -> raise (Failure "Can't multiply")
 
 let vadd a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (add x y)
     | (VReal x, VReal y) -> VReal (x +. y)
-    | (a, b) when a = VNil || b = VNil -> VNil
+    | (VNil, VNil) -> VNil
     | _ -> raise (Failure "Can't add")
 
 let vminus a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (sub x y)
     | (VReal x, VReal y) -> VReal (x -. y)
-    | (a, b) when a = VNil || b = VNil -> VNil
+    | (VNil, VNil) -> VNil
     | _ -> raise (Failure "Can't minus")
 
 let vdivide a b =
     match (a, b) with
       (VReal x, VReal y) -> VReal (x /. y)
-    | (a, b) when a = VNil || b = VNil -> VNil
+    | (VNil, VNil) -> VNil
     | _ -> raise (Failure "Can't divide")
 
 let vdiv a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (div x y)
-    | (a, b) when a = VNil || b = VNil -> VNil
+    | (VNil, VNil) -> VNil
     | _ -> raise (Failure "Can't div")
 
 let vmod a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (rem x y)
-    | (a, b) when a = VNil || b = VNil -> VNil
+    | (VNil, VNil) -> VNil
     | _ -> raise (Failure "Can't mod")
 
 let vneg a =
@@ -124,28 +126,24 @@ let vnot a =
 let vand a b =
     match (a, b) with
       (VBool x, VBool y) -> VBool (x && y)
-    | (VNil, _) -> VNil
-    | (_, VNil) -> VNil
+    | (VNil, VNil) -> VNil
     | _ -> raise (Failure "Can't And")
 
 let vor a b =
     match (a, b) with
       (VBool x, VBool y) -> VBool (x || y)
-    | (VNil, _) -> VNil
-    | (_, VNil) -> VNil
+    | (VNil, VNil) -> VNil
     | _ -> raise (Failure "Can't Or")
 
 let vxor a b =
     match (a, b) with
       (VBool x, VBool y) -> VBool ((x && (not y)) || ((not x) && y))
-    | (VNil, _) -> VNil
-    | (_, VNil) -> VNil
+    | (VNil, VNil) -> VNil
     | _ -> raise (Failure "Can't Xor")
 
 let veq a b =
     match (a, b) with
-      (VNil, _) -> VNil
-    | (_, VNil) -> VNil
+      (VNil, VNil) -> VNil
     | (VBool x, VBool y) -> VBool (x = y)
     | (VInt x, VInt y)   -> VBool (compare x y = 0)
     | (VReal x, VReal y) -> VBool (x = y)
@@ -154,8 +152,7 @@ let veq a b =
 
 let vne a b =
     match (a, b) with
-      (VNil, _) -> VNil
-    | (_, VNil) -> VNil
+      (VNil, VNil) -> VNil
     | (VBool x, VBool y) -> VBool (x != y)
     | (VInt x, VInt y)   -> VBool (compare x y != 0)
     | (VReal x, VReal y) -> VBool (x != y)
@@ -164,32 +161,28 @@ let vne a b =
 
 let vlt a b =
     match (a, b) with
-      (VNil, _) -> VNil
-    | (_, VNil) -> VNil
+      (VNil, VNil) -> VNil
     | (VInt x, VInt y)   -> VBool (compare x y < 0)
     | (VReal x, VReal y) -> VBool (x < y)
     | _ -> raise (Failure "Can't lt")
 
 let vgt a b =
     match (a, b) with
-      (VNil, _) -> VNil
-    | (_, VNil) -> VNil
+      (VNil, VNil) -> VNil
     | (VInt x, VInt y)   -> VBool (compare x y > 0)
     | (VReal x, VReal y) -> VBool (x > y)
     | _ -> raise (Failure "Can't gt")
 
 let vlteq a b =
     match (a, b) with
-      (VNil, _) -> VNil
-    | (_, VNil) -> VNil
+      (VNil, VNil) -> VNil
     | (VInt x, VInt y)   -> VBool (compare x y <= 0)
     | (VReal x, VReal y) -> VBool (x <= y)
     | _ -> raise (Failure "Can't gteq")
 
 let vgteq a b =
     match (a, b) with
-      (VNil, _) -> VNil
-    | (_, VNil) -> VNil
+      (VNil, VNil) -> VNil
     | (VInt x, VInt y)   -> VBool (compare x y >= 0)
     | (VReal x, VReal y) -> VBool (x >= y)
     | _ -> raise (Failure "Can't gteq")

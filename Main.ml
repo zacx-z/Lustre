@@ -46,11 +46,11 @@ and print_node_head (t, name, args, rets) =
 and print_node_type t = match t with
     Node -> print_string " - node:"
   | Function -> print_string " - function:"
-and print_params pms = iter print_var_def pms and print_var_def (ids, var_type, _) = print_list (fun x ->
+and print_params pms = print_list print_var_def pms; print_newline ()
+and print_var_def (ids, var_type, _) = print_list (fun x ->
         print_string (fst x)) ids;
         print_char ':';
-        print_string (format_var_type var_type);
-        print_newline ()
+        print_string (format_var_type var_type)
 
 let next_clock context input =
     try
@@ -138,6 +138,13 @@ let rec eval_expr context eqs expr : context * value =
         | Gt     (a, b) -> eval2 vgt   a b
         | Lteq   (a, b) -> eval2 vlteq a b
         | Gteq   (a, b) -> eval2 vgteq a b
+
+        | If  (c, a, b) -> let (con, cv) = eval_expr context eqs c in (match cv with
+                             VBool v -> if v then eval_expr con eqs a else eval_expr con eqs b
+                           | _ -> raise (Failure "Invalid parameter for if"))
+        | Case   (a, p) -> let (c, v) = eval_expr context eqs a in
+                           let (_, b) = find (function (PUnderscore, _) -> true | (PValue t, _) -> t = v) p in
+                           eval_expr c eqs b
 
         | Temp          -> raise (Failure "Not supported")
 
