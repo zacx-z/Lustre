@@ -26,6 +26,7 @@ and expr = RValue   of value | Elist of expr list | Temp
 
          | Pre      of expr
          | Arrow    of expr * expr
+         | When     of expr * expr
 
          | Not      of expr
          | And      of expr * expr
@@ -225,4 +226,5 @@ let check_type vtype value = match (vtype, value) with
   | (TInt,  VInt _)  -> true
   | (TChar, VChar _) -> true
   | (TReal, VReal _) -> true
+  | (_, VNil) -> true
   | _ -> false

@@ -63,12 +63,16 @@ let next_clock context input =
     with
         Failure t when t = "hd" || t = "tl" -> raise (Failure "reach the end of input")
 
-let pre context = let (prelst, cur) = split (map (fun (name, vr) ->
+let pre context = if context.clock > 0 
+    then let (prelst, cur) = split (map (fun (name, vr) ->
     ((name, { vr with value = tl vr.value }), hd vr.value)) context.local) in
-    ({ local = prelst; clock = context.clock - 1 }, cur)
+    ({ local = prelst; clock = context.clock - 1 }, Some cur)
+    else (context, None)
 
-let restore_pre context cur = { local = map (fun ((name, vr), v) -> (name, { vr with value
+let restore_pre context sav = match sav with
+      Some cur -> { local = map (fun ((name, vr), v) -> (name, { vr with value
     = v :: vr.value})) (combine context.local cur); clock = context.clock + 1 }
+    | None -> context
 
 let fstclock context = let (fstlst, rst) = split (map (fun (name, vr) ->
     (let rv = rev vr.value in (name, { vr with value = [hd rv] }), tl rv)) context.local) in
@@ -81,7 +85,10 @@ let lookup context name = assoc name context.local
 let bind_var context (name:string) (value:tval) : context =
     let tbl = context.local in
     let vr = assoc name tbl in
-    (match value with Val v -> assert (check_type vr.vtype v) | _ -> ());
+    (match value with Val v -> if not (check_type vr.vtype v)
+                               then raise (Failure (format_var_type vr.vtype))
+                               else ()
+                    | _ -> ());
     { context with local =
         (name, {vr with value = value :: tl vr.value}) :: (remove_assoc name tbl) }
 
@@ -110,24 +117,31 @@ let rec eval_expr context eqs expr : context * value =
         | Divide (a, b) -> eval2 vdivide    a b
         | Div    (a, b) -> eval2 vdiv       a b
         | Mod    (a, b) -> eval2 vmod       a b
-        | Neg      a    -> eval1 vneg       a
-        | RealConv a    -> eval1 vreal_conv a
-        | IntConv  a    -> eval1 vint_conv  a
+        | Neg        a  -> eval1 vneg       a
+        | RealConv   a  -> eval1 vreal_conv a
+        | IntConv    a  -> eval1 vint_conv  a
 
-        | RValue   v    -> get_val v
+        | RValue     v  -> get_val v
 
         | Elist    lst  -> let (c, r) = (fold_right (fun expr (context, res) ->
                            let (c, r) = eval_expr context eqs expr in (c, r ::
                                res) ) lst (context, [])) in (c, VList r)
 
-        | Pre      a    -> let (precon, cur) = pre context in
-                           let (c, r) = eval_expr precon eqs a in (restore_pre precon cur, r)
+        | Pre        a  -> let (c', r) = eval_expr context eqs a in (*TODO *)
+                           if r = VNil
+                           then (c', VNil)
+                           else let rec eval_pre context =
+                               let (precon, cur) = pre context in
+                               let (c, r) = eval_expr precon eqs a in
+                                 if r = VNil && c.clock > 0 then let (c, r) = eval_pre c in (restore_pre c cur, r)
+                                 else (restore_pre c cur, r)
+                           in eval_pre c'
         | Arrow  (a, b) -> if context.clock == 1
                            then let (fstcon, rst) = fstclock context in
                                 let (c, r) = eval_expr fstcon eqs a in (restore_fc fstcon rst, r)
                            else eval_expr context eqs b
 
-        | Not      a    -> eval1 vnot  a
+        | Not        a  -> eval1 vnot  a
         | And    (a, b) -> eval2 vand  a b
         | Or     (a, b) -> eval2 vor   a b
         | Xor    (a, b) -> eval2 vxor  a b

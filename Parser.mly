@@ -294,7 +294,7 @@ list_expr:
 tempo_expr:
   | PRE expr                              { Pre $2 }
   | expr ARROW expr                       { Arrow ($1, $3) }
-  | expr WHEN clock_expr                  { Temp }
+  | expr WHEN clock_expr                  { When ($1, $3) }
 //  | FBY LPAREN elist SEMICOLON CONST_INT SEMICOLON elist RPAREN
 //                            
   ;
