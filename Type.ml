@@ -12,7 +12,8 @@ and lvalue = LIdent of string | Underscore
 and value = VBool of bool | VInt of int32 | VChar of char | VReal of float
           | VIdent of string
           | VList of value list
-          | VNil
+          | VNil  (*produced by pre operator*)
+          | VNone (*not in clock cycle *)
 (* and stream = { run: value list -> stream * value } *)
 and expr = RValue   of value | Elist of expr list | Temp
          | IntConv  of expr
@@ -58,13 +59,20 @@ type program = {
 
 
 (* Calculation *)
+
+exception Not_same_clock
+exception Invalid_op1 of string * value
+exception Invalid_op2 of string * value * value
+
 let vmult a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (mul x y)
     | (VReal x, VReal y) -> VReal (x *. y)
     | (VNil, _) -> VNil
     | (_, VNil) -> VNil
-    | _ -> raise (Failure "Can't multiply")
+    | (VNone, VNone) -> VNone
+    | (a, b) when a = VNone || b = VNone -> raise Not_same_clock
+    | _ -> raise (Invalid_op2 ("multiply", a, b))
 
 let vadd a b =
     match (a, b) with
@@ -72,7 +80,9 @@ let vadd a b =
     | (VReal x, VReal y) -> VReal (x +. y)
     | (VNil, _) -> VNil
     | (_, VNil) -> VNil
-    | _ -> raise (Failure "Can't add")
+    | (VNone, VNone) -> VNone
+    | (a, b) when a = VNone || b = VNone -> raise Not_same_clock
+    | _ -> raise (Invalid_op2 ("add", a, b))
 
 let vminus a b =
     match (a, b) with
@@ -80,77 +90,95 @@ let vminus a b =
     | (VReal x, VReal y) -> VReal (x -. y)
     | (VNil, _) -> VNil
     | (_, VNil) -> VNil
-    | _ -> raise (Failure "Can't minus")
+    | (VNone, VNone) -> VNone
+    | (a, b) when a = VNone || b = VNone -> raise Not_same_clock
+    | _ -> raise (Invalid_op2 ("minus", a, b))
 
 let vdivide a b =
     match (a, b) with
       (VReal x, VReal y) -> VReal (x /. y)
     | (VNil, _) -> VNil
     | (_, VNil) -> VNil
-    | _ -> raise (Failure "Can't divide")
+    | (VNone, VNone) -> VNone
+    | (a, b) when a = VNone || b = VNone -> raise Not_same_clock
+    | _ -> raise (Invalid_op2 ("divide", a, b))
 
 let vdiv a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (div x y)
     | (VNil, _) -> VNil
     | (_, VNil) -> VNil
-    | _ -> raise (Failure "Can't div")
+    | (VNone, VNone) -> VNone
+    | (a, b) when a = VNone || b = VNone -> raise Not_same_clock
+    | _ -> raise (Invalid_op2 ("div", a, b))
 
 let vmod a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (rem x y)
     | (VNil, _) -> VNil
     | (_, VNil) -> VNil
-    | _ -> raise (Failure "Can't mod")
+    | (VNone, VNone) -> VNone
+    | (a, b) when a = VNone || b = VNone -> raise Not_same_clock
+    | _ -> raise (Invalid_op2 ("mod", a, b))
 
 let vneg a =
     match a with
       VInt x -> VInt (neg x)
     | VReal x -> VReal (-.x)
     | VNil -> VNil
-    | _ -> raise (Failure "Can't negate")
+    | VNone -> VNone
+    | _ -> raise (Invalid_op1 ("negate", a))
 
 let vreal_conv a =
     match a with
       VInt x -> VReal (to_float x)
     | VReal x -> VReal x
     | VNil -> VNil
-    | _ -> raise (Failure "Can't convert to real")
+    | VNone -> VNone
+    | _ -> raise (Invalid_op1 ("convert to real", a))
 
 let vint_conv a =
     match a with
       VInt x -> VInt x
     | VReal x -> VInt (of_float x)
     | VNil -> VNil
-    | _ -> raise (Failure "Can't convert to int")
+    | VNone -> VNone
+    | _ -> raise (Invalid_op1 ("convert to int", a))
 
 
 let vnot a =
     match a with
       VBool x -> VBool (not x)
     | VNil -> VNil
-    | _ -> raise (Failure "Can't Not")
+    | VNone -> VNone
+    | _ -> raise (Invalid_op1 ("not", a))
 
 let vand a b =
     match (a, b) with
       (VBool x, VBool y) -> VBool (x && y)
     | (VNil, _) -> VNil
     | (_, VNil) -> VNil
-    | _ -> raise (Failure "Can't And")
+    | (VNone, VNone) -> VNone
+    | (a, b) when a = VNone || b = VNone -> raise Not_same_clock
+    | _ -> raise (Invalid_op2 ("and", a, b))
 
 let vor a b =
     match (a, b) with
       (VBool x, VBool y) -> VBool (x || y)
     | (VNil, _) -> VNil
     | (_, VNil) -> VNil
-    | _ -> raise (Failure "Can't Or")
+    | (VNone, VNone) -> VNone
+    | (a, b) when a = VNone || b = VNone -> raise Not_same_clock
+    | _ -> raise (Invalid_op2 ("or", a, b))
 
 let vxor a b =
     match (a, b) with
       (VBool x, VBool y) -> VBool ((x && (not y)) || ((not x) && y))
     | (VNil, _) -> VNil
     | (_, VNil) -> VNil
-    | _ -> raise (Failure "Can't Xor")
+    | (VNone, VNone) -> VNone
+    | (a, b) when a = VNone || b = VNone -> raise Not_same_clock
+    | _ -> raise (Invalid_op2 ("xor", a, b))
 
 let veq a b =
     match (a, b) with
@@ -160,7 +188,9 @@ let veq a b =
     | (VInt x, VInt y)   -> VBool (compare x y = 0)
     | (VReal x, VReal y) -> VBool (x = y)
     | (VChar x, VChar y) -> VBool (x = y)
-    | _ -> raise (Failure "Can't eq")
+    | (VNone, VNone) -> VNone
+    | (a, b) when a = VNone || b = VNone -> raise Not_same_clock
+    | _ -> raise (Invalid_op2 ("equal", a, b))
 
 let vne a b =
     match (a, b) with
@@ -170,7 +200,9 @@ let vne a b =
     | (VInt x, VInt y)   -> VBool (compare x y != 0)
     | (VReal x, VReal y) -> VBool (x != y)
     | (VChar x, VChar y) -> VBool (x != y)
-    | _ -> raise (Failure "Can't ne")
+    | (VNone, VNone) -> VNone
+    | (a, b) when a = VNone || b = VNone -> raise Not_same_clock
+    | _ -> raise (Invalid_op2 ("not equal", a, b))
 
 let vlt a b =
     match (a, b) with
@@ -178,7 +210,9 @@ let vlt a b =
     | (_, VNil) -> VNil
     | (VInt x, VInt y)   -> VBool (compare x y < 0)
     | (VReal x, VReal y) -> VBool (x < y)
-    | _ -> raise (Failure "Can't lt")
+    | (VNone, VNone) -> VNone
+    | (a, b) when a = VNone || b = VNone -> raise Not_same_clock
+    | _ -> raise (Invalid_op2 ("<", a, b))
 
 let vgt a b =
     match (a, b) with
@@ -186,7 +220,9 @@ let vgt a b =
     | (_, VNil) -> VNil
     | (VInt x, VInt y)   -> VBool (compare x y > 0)
     | (VReal x, VReal y) -> VBool (x > y)
-    | _ -> raise (Failure "Can't gt")
+    | (VNone, VNone) -> VNone
+    | (a, b) when a = VNone || b = VNone -> raise Not_same_clock
+    | _ -> raise (Invalid_op2 (">", a, b))
 
 let vlteq a b =
     match (a, b) with
@@ -194,7 +230,9 @@ let vlteq a b =
     | (_, VNil) -> VNil
     | (VInt x, VInt y)   -> VBool (compare x y <= 0)
     | (VReal x, VReal y) -> VBool (x <= y)
-    | _ -> raise (Failure "Can't gteq")
+    | (VNone, VNone) -> VNone
+    | (a, b) when a = VNone || b = VNone -> raise Not_same_clock
+    | _ -> raise (Invalid_op2 ("<=", a, b))
 
 let vgteq a b =
     match (a, b) with
@@ -202,7 +240,9 @@ let vgteq a b =
     | (_, VNil) -> VNil
     | (VInt x, VInt y)   -> VBool (compare x y >= 0)
     | (VReal x, VReal y) -> VBool (x >= y)
-    | _ -> raise (Failure "Can't gteq")
+    | (VNone, VNone) -> VNone
+    | (a, b) when a = VNone || b = VNone -> raise Not_same_clock
+    | _ -> raise (Invalid_op2 (">=", a, b))
 
 (* Helpers *)
 let node_name (_, name, _, _) = name (* receive header and return name*)
@@ -220,6 +260,7 @@ let rec print_value value = match value with
   | VIdent v   -> printf "Undefined: %s" v
   | VList  v   -> print_string "VList: "; print_list print_value v
   | VNil       -> print_string "Nil"
+  | VNone      -> print_string "Nothing"
 
 let format_var_type = function
     TBool -> "bool"

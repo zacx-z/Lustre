@@ -10,11 +10,30 @@ let find_replace func lst = match fold_left (fun (found, res) elem ->
         if found
         then (true, elem :: res)
         else match func elem with
-            None -> (false, elem :: res)
+          None -> (false, elem :: res)
         | Some ne -> (true, ne :: res)
     ) (false, []) lst with
   (true, res) -> res
 | (false, _) -> raise Not_found
+
+let split_string c str =
+    let prepend i = function
+          (a, b) :: rst when a = i + 1 -> (i, b) :: rst
+        | lst -> (i, i + 1) :: lst
+        in
+    let rec split' c str i =
+        if i = String.length str
+        then []
+        else let ch = String.get str i in
+            if ch = c
+            then split' c str (i + 1)
+            else prepend i (split' c str (i + 1))
+    in map (fun (a, b) -> String.sub str a (b - a)) (split' c str 0)
+
+let transpose = function
+      [] -> []
+    | matrix -> fold_right (fun line res -> map (fun (l, r) -> l :: r)
+                           (combine line res)) matrix (map (fun l -> []) (hd matrix))
 
 exception Type_mismatch of var_type * value
 exception Cyclic_dependence of string
@@ -231,19 +250,6 @@ let run_node { header=(_, _, args, rets); locals = locals; equations=eqs } input
     print_newline ();
     cycle (next_clock context input) in cycle (next_clock context input)
 
-let split_string c str =
-    let prepend i = function
-          (a, b) :: rst when a = i + 1 -> (i, b) :: rst
-        | lst -> (i, i + 1) :: lst
-        in
-    let rec split' c str i =
-        if i = String.length str
-        then []
-        else let ch = String.get str i in
-            if ch = c
-            then split' c str (i + 1)
-            else prepend i (split' c str (i + 1))
-    in map (fun (a, b) -> String.sub str a (b - a)) (split' c str 0)
 
 let read_data_in fname =
     let parse_line str = map parse (split_string ' ' str) in
@@ -253,10 +259,6 @@ let read_data_in fname =
         with End_of_file -> [] in
         get ()) in close_in i; res
 
-let transpose = function
-      [] -> []
-    | matrix -> fold_right (fun line res -> map (fun (l, r) -> l :: r)
-                           (combine line res)) matrix (map (fun l -> []) (hd matrix))
 
 let _ =
     try
