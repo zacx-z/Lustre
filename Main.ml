@@ -40,6 +40,7 @@ exception Cyclic_dependence of string
 exception Invalid_if of expr
 exception Not_in_equation of string
 exception Case_not_match of value
+exception Invalid_expr_in_when of value
 
 type var = {
     name : string;
@@ -144,11 +145,7 @@ let hdv lst = if lst = [] then Val VNil else hd lst
 
 let rec eval_expr context eqs expr : context * value =
     let get_val x =
-        let eval varname =
-            match hdv (lookup context varname).value with
-              Undefined -> solve_var context eqs varname
-            | Evaluating -> print_context context;raise (Cyclic_dependence varname)
-            | Val v -> (context, v) in
+        let eval varname = solve_var context eqs varname in
         match x with
           VIdent varname -> eval varname
         | t -> (context, t) in
@@ -173,17 +170,25 @@ let rec eval_expr context eqs expr : context * value =
 
         | Elist    lst  -> let (c, r) = (fold_right (fun expr (context, res) ->
                            let (c, r) = eval_expr context eqs expr in (c, r ::
-                               res) ) lst (context, [])) in (c, VList r)
+                               res) ) lst (context, [])) in
+                           (c, match r with [v] -> v | _ -> VList r)
 
-        | Pre        a  -> let eval_pre context =
+        | Pre        a  -> let rec eval_pre context =
                                let (precon, cur) = pre context in
-                               let (c, r) = eval_expr precon eqs a in (restore_pre c cur, r)
+                               let (c, r) = eval_expr precon eqs a in
+                               if r = VNone & c.clock != 0
+                               then let (c', r') = eval_pre c in (restore_pre c' cur, r')
+                               else (restore_pre c cur, r)
                            in eval_pre context
 
-        | Arrow  (a, b) -> if context.clock == 1
+        | Arrow  (a, b) -> if context.clock = 1
                            then let (fstcon, rst) = fstclock context in
                                 let (c, r) = eval_expr fstcon eqs a in (restore_fc fstcon rst, r)
                            else eval_expr context eqs b
+        | When   (a, c) -> let (nc, cr) = eval_clock_expr context eqs c in
+                           if cr
+                           then eval_expr nc eqs a
+                           else (nc, VNone)
 
         | Not        a  -> eval1 vnot  a
         | And    (a, b) -> eval2 vand  a b
@@ -229,7 +234,18 @@ and solve_var context eqs varname : context * value =
           VList lst -> (fold_right bind_lhs (combine lhs lst) context, assoc (LIdent varname) (combine lhs lst))
         | t -> (bind_lhs (hd lhs, t) context, t))
     | Val v -> (context, v)
-    | _ -> assert false
+    | Evaluating -> print_context context; raise (Cyclic_dependence varname)
+
+and eval_clock_expr context eqs expr =
+    let exact_bool = function
+      VBool v -> v
+    | t -> raise (Invalid_expr_in_when t)
+    in match expr with
+      CWhen varname -> let (c, r) = solve_var context eqs varname in (c, exact_bool r)
+    | CNot  varname -> let (c, r) = solve_var context eqs varname in (c, not (exact_bool r))
+    | CMatch (var1, var2) -> let (c1, r1) = solve_var context eqs var1 in
+                             let (c2, r2) = solve_var c1 eqs var2 in
+                             (c2, r1 = r2)
 
 let run_node { header=(_, _, args, rets); locals = locals; equations=eqs } input =
     (* Build vars *)

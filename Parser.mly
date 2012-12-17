@@ -183,7 +183,7 @@ when_decl:
   ;
 
 csexpr:
-  | IDENT                                 { CIs $1 }
+  | IDENT                                 { CWhen $1 }
   | NOT IDENT                             { CNot $2 }
   | IDENT MATCH ident_nonlocal            { CMatch ($1, $3) }
   ;
@@ -246,9 +246,9 @@ ident_local:
   ;
 
 clock_expr:
-  | ident_local                           { 1 }
-  | NOT ident_local                       { 1 }
-  | ident_local MATCH ident_nonlocal      { 1 }
+  | ident_local                           { CWhen $1  }
+  | NOT ident_local                       { CNot $2 }
+  | ident_local MATCH ident_nonlocal      { CMatch ($1, $3) }
   ;
 
 elist:
@@ -294,7 +294,7 @@ list_expr:
 tempo_expr:
   | PRE expr                              { Pre $2 }
   | expr ARROW expr                       { Arrow ($1, $3) }
-  | expr WHEN clock_expr                  { Temp (*When ($1, $3)*) }
+  | expr WHEN clock_expr                  { When ($1, $3) }
 //  | FBY LPAREN elist SEMICOLON CONST_INT SEMICOLON elist RPAREN
 //                            
   ;

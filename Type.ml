@@ -4,10 +4,9 @@ open Int32
 
 
 type node_type = Node | Function
-and var_def = var_id list * var_type * cs_expr option
+and var_def = var_id list * var_type * clock_expr option
 and var_id = string * bool
 and var_type = TBool | TInt | TChar | TReal | TIdent of string
-and cs_expr = CIs of string | CNot of string | CMatch of string * string
 and lvalue = LIdent of string | Underscore
 and value = VBool of bool | VInt of int32 | VChar of char | VReal of float
           | VIdent of string
@@ -28,6 +27,7 @@ and expr = RValue   of value | Elist of expr list | Temp
 
          | Pre      of expr
          | Arrow    of expr * expr
+         | When     of expr * clock_expr
 
          | Not      of expr
          | And      of expr * expr
@@ -44,6 +44,7 @@ and expr = RValue   of value | Elist of expr list | Temp
          | If       of expr * expr * expr
          | Case     of expr * (pattern * expr) list
 and pattern = PUnderscore | PValue of value
+and clock_expr = CWhen of string | CNot of string | CMatch of string * string
 
 
 type node = {
@@ -284,4 +285,5 @@ let check_type vtype value = match (vtype, value) with
   | (TChar, VChar _) -> true
   | (TReal, VReal _) -> true
   | (_, VNil) -> true
+  | (_, VNone) -> true
   | _ -> false
