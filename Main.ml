@@ -51,7 +51,8 @@ type var = {
 and tval = Undefined | Evaluating | Val of value
 and context = {
     local : (string * var) list;
-    clock : int
+    clock : int;
+    eqs : (lvalue list * expr) list
 }
 
 let assert_type vtype value = match value with
@@ -106,7 +107,8 @@ let next_clock context input =
         let grab_input name = if mem_assoc name input
         then Val (hd (assoc name input))
         else Undefined in
-        ({ local = map (fun (name, vr) -> (name, { vr with value =
+        ({ context with
+           local = map (fun (name, vr) -> (name, { vr with value =
                                                    let v = grab_input vr.name in assert_type vr.vtype v; v :: vr.value
                                            })) context.local;
            clock = context.clock + 1
@@ -117,19 +119,19 @@ let next_clock context input =
 let pre context = if context.clock > 0 
     then let (prelst, cur) = split (map (fun (name, vr) ->
     ((name, { vr with value = tl vr.value }), hd vr.value)) context.local) in
-    ({ local = prelst; clock = context.clock - 1 }, Some cur)
+    ({ context with local = prelst; clock = context.clock - 1 }, Some cur)
     else (context, None)
 
 let restore_pre context sav = match sav with
-      Some cur -> { local = map (fun ((name, vr), v) -> (name, { vr with value
+      Some cur -> { context with local = map (fun ((name, vr), v) -> (name, { vr with value
     = v :: vr.value})) (combine context.local cur); clock = context.clock + 1 }
     | None -> context
 
 let fstclock context = let (fstlst, rst) = split (map (fun (name, vr) ->
     (let rv = rev vr.value in (name, { vr with value = [hd rv] }), tl rv)) context.local) in
-    ({ local = fstlst; clock = 1 }, (context.clock, rst))
+    ({ context with local = fstlst; clock = 1 }, (context.clock, rst))
 
-let restore_fc context rst = { local = map (fun ((name, vr), rv) ->
+let restore_fc context rst = { context with local = map (fun ((name, vr), rv) ->
     (name, { vr with value = rev (vr.value @ rv) })) (combine context.local (snd rst)); clock = (fst rst) }
 
 let lookup context name = assoc name context.local
@@ -143,18 +145,18 @@ let bind_var context (name:string) (value:tval) : context =
 
 let hdv lst = if lst = [] then Val VNil else hd lst
 
-let rec eval_expr context eqs expr : context * value =
+let rec eval_expr context expr : context * value =
     let get_val x =
-        let eval varname = solve_var context eqs varname in
+        let eval varname = solve_var context varname in
         match x with
           VIdent varname -> eval varname
         | t -> (context, t) in
     let eval2 op a b =
-        let (c1, ra) = eval_expr context eqs a in
-        let (c2, rb) = eval_expr c1 eqs b in
+        let (c1, ra) = eval_expr context a in
+        let (c2, rb) = eval_expr c1 b in
         (c2, op ra rb)
     and eval1 op a =
-        let (c, r) = eval_expr context eqs a in (c, op r)
+        let (c, r) = eval_expr context a in (c, op r)
         in match expr with
           Add    (a, b) -> eval2 vadd       a b
         | Minus  (a, b) -> eval2 vminus     a b
@@ -169,13 +171,13 @@ let rec eval_expr context eqs expr : context * value =
         | RValue     v  -> get_val v
 
         | Elist    lst  -> let (c, r) = (fold_right (fun expr (context, res) ->
-                           let (c, r) = eval_expr context eqs expr in (c, r ::
+                           let (c, r) = eval_expr context expr in (c, r ::
                                res) ) lst (context, [])) in
                            (c, match r with [v] -> v | _ -> VList r)
 
         | Pre        a  -> let rec eval_pre context =
                                let (precon, cur) = pre context in
-                               let (c, r) = eval_expr precon eqs a in
+                               let (c, r) = eval_expr precon a in
                                if r = VNone & c.clock != 0
                                then let (c', r') = eval_pre c in (restore_pre c' cur, r')
                                else (restore_pre c cur, r)
@@ -183,11 +185,11 @@ let rec eval_expr context eqs expr : context * value =
 
         | Arrow  (a, b) -> if context.clock = 1
                            then let (fstcon, rst) = fstclock context in
-                                let (c, r) = eval_expr fstcon eqs a in (restore_fc fstcon rst, r)
-                           else eval_expr context eqs b
-        | When   (a, c) -> let (nc, cr) = eval_clock_expr context eqs c in
+                                let (c, r) = eval_expr fstcon a in (restore_fc fstcon rst, r)
+                           else eval_expr context b
+        | When   (a, c) -> let (nc, cr) = eval_clock_expr context c in
                            if cr
-                           then eval_expr nc eqs a
+                           then eval_expr nc a
                            else (nc, VNone)
 
         | Not        a  -> eval1 vnot  a
@@ -202,17 +204,18 @@ let rec eval_expr context eqs expr : context * value =
         | Lteq   (a, b) -> eval2 vlteq a b
         | Gteq   (a, b) -> eval2 vgteq a b
 
-        | If  (c, a, b) -> let (con, cv) = eval_expr context eqs c in (match cv with
-                             VBool v -> if v then eval_expr con eqs a else eval_expr con eqs b
+        | If  (c, a, b) -> let (con, cv) = eval_expr context c in (match cv with
+                             VBool v -> if v then eval_expr con a else eval_expr con b
                            | _ -> raise (Invalid_if c))
-        | Case   (a, p) -> let (c, v) = eval_expr context eqs a in
+        | Case   (a, p) -> let (c, v) = eval_expr context a in
                            let (_, b) = try find (function (PUnderscore, _) -> true | (PValue t, _) -> t = v) p
                                         with Not_found -> raise (Case_not_match v) in
-                           eval_expr c eqs b
+                           eval_expr c b
 
         | Temp          -> raise (Failure "Not supported")
 
-and solve_var context eqs varname : context * value =
+and solve_var context varname : context * value =
+    let eqs = context.eqs in
     let value = hdv (lookup context varname).value in
     match value with
       Undefined -> (
@@ -222,7 +225,7 @@ and solve_var context eqs varname : context * value =
                     (function LIdent name -> name = varname | _ -> false) lhs) eqs
                  with Not_found -> raise (Not_in_equation varname) in
 
-        let (context, result) = eval_expr context eqs (snd eq)
+        let (context, result) = eval_expr context (snd eq)
 
         and bind_lhs (vr,v) context = match vr with
           LIdent varname -> bind_var context varname (Val v)
@@ -236,18 +239,19 @@ and solve_var context eqs varname : context * value =
     | Val v -> (context, v)
     | Evaluating -> print_context context; raise (Cyclic_dependence varname)
 
-and eval_clock_expr context eqs expr =
+and eval_clock_expr context expr =
     let exact_bool = function
       VBool v -> v
     | t -> raise (Invalid_expr_in_when t)
     in match expr with
-      CWhen varname -> let (c, r) = solve_var context eqs varname in (c, exact_bool r)
-    | CNot  varname -> let (c, r) = solve_var context eqs varname in (c, not (exact_bool r))
-    | CMatch (var1, var2) -> let (c1, r1) = solve_var context eqs var1 in
-                             let (c2, r2) = solve_var c1 eqs var2 in
+      CWhen varname -> let (c, r) = solve_var context varname in (c, exact_bool r)
+    | CNot  varname -> let (c, r) = solve_var context varname in (c, not (exact_bool r))
+    | CMatch (var1, var2) -> let (c1, r1) = solve_var context var1 in
+                             let (c2, r2) = solve_var c1 var2 in
                              (c2, r1 = r2)
 
-let run_node { header=(_, _, args, rets); locals = locals; equations=eqs } input =
+
+let run_node { header=(_, _, args, rets); locals = locals; equations = eqs } input =
     (* Build vars *)
     let vars_table = map (fun v -> (v.name, v)) in
     let output_vars = make_var_list rets in
@@ -255,10 +259,11 @@ let run_node { header=(_, _, args, rets); locals = locals; equations=eqs } input
                            (concat [(make_var_list args);
                                     (output_vars);
                                     (make_var_list locals)]);
-                    clock = 0 } in
+                    clock = 0;
+                    eqs = eqs } in
     let rec cycle (context, input) =
     let (context, output) = fold_right (fun var (context, res) -> let (c, r) =
-        (solve_var context eqs var.name)
+        (solve_var context var.name)
                                                         in (c, r::res))
                     output_vars (context, []) in
 
