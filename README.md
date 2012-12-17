@@ -8,7 +8,7 @@ Type command `make run` to run the code. The interpreter will interpret the lust
 
 The input file given data in text format (ASCII). Each line represents input values in a basic clock, and each input value in a line is separated by whitespaces. There are four types of data: int, real, char, bool.
 
- *  *int *: written in number, like `12`, `23`.
+ *  *int*: written in number, like `12`, `23`.
  *  *real*: written in number that has a period, like `8.`, `7.6`.
  *  *char*: written in a character quoted by ', like `'a'`, `'f'`.
  *  *bool*: written as `t` to indicate true value or `f` to indicate false value.
