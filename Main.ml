@@ -5,7 +5,6 @@ open List
 open Type
 open Printf
 open Int32
-exception F of expr
 
 let find_replace func lst = match fold_left (fun (found, res) elem ->
         if found
@@ -37,12 +36,14 @@ let transpose = function
                            (combine line res)) matrix (map (fun l -> []) (hd matrix))
 
 exception Type_mismatch of var_type * value
-exception Cyclic_dependence of string
-exception Invalid_if of expr
-exception Not_in_equation of string
-exception Case_not_match of value
-exception Invalid_expr_in_when of value
+exception Cyclic_dependence of string * string
+exception Invalid_if of expr * value
+exception Not_in_equation of string * string
+exception Case_not_match of expr * value
+exception Invalid_expr_in_when of expr * value
 exception Not_same_clock of expr * value list
+exception Not_same_clock' of clock_expr * value list
+exception Failure_val of value
 
 type var = {
     name : string;
@@ -53,6 +54,7 @@ type var = {
 and tval = Undefined | Evaluating | Val of value
 and context = {
     local : (string * var) list;
+    node_name : string;
     clock : int;
     eqs : (lvalue list * expr) list
 }
@@ -63,12 +65,6 @@ let check_type vtype value = match value with
   Val v -> if not (check_type vtype v)
            then raise (Type_mismatch (vtype, v))
 | _ -> ()
-
-(*let check_clock v1 v2 = match (v1, v2) with
-  (VNone, VNone) -> ()
-| (VNone, _) -> raise Not_same_clock
-| (_, VNone) -> raise Not_same_clock
-| _ -> ()*)
 
 let make_var (namelist, t, csexpr) = map (function varid -> 
     {name = (fst varid); is_clock = (snd varid); vtype = t; value = [] }) namelist
@@ -174,9 +170,9 @@ let rec eval_expr context expr : context * value =
         lst (context, [])) in
 
     let eval2 op a b =
-        let (c, [ra;rb]) = eval_lst [a;b] in (c, op ra rb)
+        let (c, t) = eval_lst [a;b] in match t with [ra;rb] -> (c, op ra rb) | _ -> assert false
     and eval1 op a =
-        let (c, [r]) = eval_lst [a] in (c, op r)
+        let (c, t) = eval_lst [a] in match t with [r] -> (c, op r) | _ -> assert false
 
     and arrow a b = if context.clock = 1 then a else b
         in match expr with
@@ -206,8 +202,8 @@ let rec eval_expr context expr : context * value =
                            else (context, VNone)
 
         | Arrow  (a, b) -> eval2 arrow a b
-        | When   (a, c) -> let (nc, cr) = eval_clock_expr context c in
-                           (match cr with
+        | When   (a, c) -> (try let (nc, cr) = eval_clock_expr context c in
+                           match cr with
                              VBool v -> let (c, r) = eval_expr nc a in
                                         if r = VNone then raise (Not_same_clock (expr, [r; cr]));
                                         if v
@@ -216,7 +212,8 @@ let rec eval_expr context expr : context * value =
                            | VNone   -> let (c, r) = eval_expr nc a in
                                         if r != VNone then raise (Not_same_clock (expr, [r; cr]));
                                         (c, VNone)
-                           | _       -> raise (Invalid_expr_in_when cr))
+                           | _       -> raise (Invalid_expr_in_when (expr, cr))
+                           with Failure_val v-> raise (Invalid_expr_in_when (expr, v)))
 
         | Not        a  -> eval1 vnot  a
         | And    (a, b) -> eval2 vand  a b
@@ -232,10 +229,10 @@ let rec eval_expr context expr : context * value =
 
         | If  (c, a, b) -> let (con, cv) = eval_expr context c in (match cv with
                              VBool v -> if v then eval_expr con a else eval_expr con b
-                           | _ -> raise (Invalid_if c))
+                           | v -> raise (Invalid_if (expr, v)))
         | Case   (a, p) -> let (c, v) = eval_expr context a in
                            let (_, b) = try find (function (PUnderscore, _) -> true | (PValue t, _) -> t = v) p
-                                        with Not_found -> raise (Case_not_match v) in
+                                        with Not_found -> raise (Case_not_match (expr, v)) in
                            eval_expr c b
 
         | Temp          -> raise (Failure "Not supported")
@@ -249,7 +246,7 @@ and solve_var context varname : context * value =
         let eq = try find
                  (fun (lhs, expr) -> exists
                     (function LIdent name -> name = varname | _ -> false) lhs) eqs
-                 with Not_found -> raise (Not_in_equation varname) in
+                 with Not_found -> raise (Not_in_equation (context.node_name, varname)) in
 
         let (context, result) = eval_expr context (snd eq)
 
@@ -263,17 +260,17 @@ and solve_var context varname : context * value =
           VList lst -> (fold_right bind_lhs (combine lhs lst) context, assoc (LIdent varname) (combine lhs lst))
         | t -> (bind_lhs (hd lhs, t) context, t))
     | Val v -> (context, v)
-    | Evaluating -> print_context context; raise (Cyclic_dependence varname)
+    | Evaluating -> print_context context; raise (Cyclic_dependence (context.node_name, varname))
 
 and eval_clock_expr context expr =
     let v_not = function
       VBool v -> VBool (not v)
     | VNone -> VNone
-    | t -> raise (Invalid_expr_in_when t)
+    | t -> raise (Failure_val t)
     and v_eq v1 v2 = match (v1, v2) with
       (VNone, VNone) -> VNone
-    (*| (VNone, _) -> raise (Not_same_clock (expr, [v1;v2]))
-    | (_, VNone) -> raise (Not_same_clock (expr, [v1;v2]))*)
+    | (VNone, _) -> raise (Not_same_clock' (expr, [v1;v2]))
+    | (_, VNone) -> raise (Not_same_clock' (expr, [v1;v2]))
     | (a, b) -> VBool (a = b)
     in match expr with
       CWhen varname -> solve_var context varname
@@ -305,7 +302,7 @@ and deduce_clock' context expr =
                         let eq = try find
                                 (fun (lhs, expr) -> exists
                                     (function LIdent name -> name = varname | _ -> false) lhs) context.eqs
-                                with Not_found -> raise (Not_in_equation varname) in
+                                with Not_found -> raise (Not_in_equation (context.node_name, varname)) in
                         deduce_clock' nc (snd eq)
                       | Val v      -> to_tb (not (v = VNone)))
     | t -> TTrue
@@ -323,7 +320,7 @@ and deduce_clock' context expr =
 
     | RValue     v  -> deduce_val v
 
-    | Elist    lst  -> deduce (hd lst) (*TODO*)
+    | Elist    lst  -> fold_right (@-) (map deduce lst) TUnknown (*I think values in an expression list are of the same clock*)
 
     | Not        a  -> deduce a
     | And    (a, b) -> deduce a @- deduce b
@@ -340,12 +337,12 @@ and deduce_clock' context expr =
     | Case   (a, p) -> deduce a @- fold_right (@-) (map (deduce @. snd) p) TUnknown (*Is it lazy? Maybe needing some optimization*)
 
     | Pre        a  -> deduce a
-    | When   (a, b) -> deduce a @& (let (c, r) = eval_clock_expr context b in (match r with VBool v -> v | _ -> raise (Invalid_expr_in_when r)))
+    | When   (a, b) -> deduce a @& (let (c, r) = eval_clock_expr context b in (match r with VBool v -> v | _ -> raise (Invalid_expr_in_when (expr, r))))
     | Arrow  (a, b) -> deduce a @- deduce b
 
     | Temp          -> raise (Failure "Not supported")
 
-let run_node { header=(_, _, args, rets); locals = locals; equations = eqs } input =
+let run_node { header=(_, _, args, rets); locals = locals; equations = eqs } node_name input =
     (* Build vars *)
     let vars_table = map (fun v -> (v.name, v)) in
     let output_vars = make_var_list rets in
@@ -353,6 +350,7 @@ let run_node { header=(_, _, args, rets); locals = locals; equations = eqs } inp
                            (concat [(make_var_list args);
                                     (output_vars);
                                     (make_var_list locals)]);
+                    node_name = node_name;
                     clock = 0;
                     eqs = eqs } in
     let rec cycle (context, input) =
@@ -384,6 +382,7 @@ let _ =
                 and get_args (_, _, args, _) = args in
                 let in_argsname = (map (fun vr -> vr.name) (make_var_list (get_args node.header))) in
                 run_node node
+                         "main"
                          (combine in_argsname (transpose (read_data_in "in.data")))
 
     with

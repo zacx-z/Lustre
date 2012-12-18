@@ -43,6 +43,7 @@ and expr = RValue   of value | Elist of expr list | Temp
 
          | If       of expr * expr * expr
          | Case     of expr * (pattern * expr) list
+
 and pattern = PUnderscore | PValue of value
 and clock_expr = CWhen of string | CNot of string | CMatch of string * string
 
@@ -262,6 +263,7 @@ let rec print_value value = match value with
   | VList  v   -> print_string "VList: "; print_list print_value v
   | VNil       -> print_string "Nil"
   | VNone      -> print_string "Nothing"
+
 
 let format_var_type = function
     TBool -> "bool"
