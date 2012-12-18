@@ -2,6 +2,8 @@ open List
 open Printf
 open Int32
 
+(*function composition*)
+let (@.) f g x = f (g x)
 
 type node_type = Node | Function
 and var_def = var_id list * var_type * clock_expr option
@@ -14,7 +16,8 @@ and value = VBool of bool | VInt of int32 | VChar of char | VReal of float
           | VNil  (*produced by pre operator*)
           | VNone (*not in clock cycle *)
 (* and stream = { run: value list -> stream * value } *)
-and expr = RValue   of value | Elist of expr list | Temp
+and expr = RValue   of value
+         | Elist    of expr list
          | IntConv  of expr
          | RealConv of expr
          | Neg      of expr
@@ -44,6 +47,7 @@ and expr = RValue   of value | Elist of expr list | Temp
          | If       of expr * expr * expr
          | Case     of expr * (pattern * expr) list
 
+         | Temp
 and pattern = PUnderscore | PValue of value
 and clock_expr = CWhen of string | CNot of string | CMatch of string * string
 
@@ -249,21 +253,30 @@ let vgteq a b =
 (* Helpers *)
 let node_name (_, name, _, _) = name (* receive header and return name*)
 
-let rec print_list func lst = match lst with
-    fst :: snd :: rest -> func fst; print_char ','; print_list func (snd::rest)
+let rec print_list func = function
+    fst :: snd :: rest -> func fst; print_string ", "; print_list func (snd::rest)
   | [s] -> func s
   | [] -> ()
 
-let rec print_value value = match value with
-    VBool  b   -> printf "Bool: %b" b
-  | VInt   i   -> printf "Int: %d" (to_int i)
-  | VChar  c   -> printf "Char: %c" c
-  | VReal  r   -> printf "Real: %f" r
-  | VIdent v   -> printf "Undefined: %s" v
-  | VList  v   -> print_string "VList: "; print_list print_value v
-  | VNil       -> print_string "Nil"
-  | VNone      -> print_string "Nothing"
+let rec format_value = function
+    VBool  b   -> sprintf "Bool: %b" b
+  | VInt   i   -> sprintf "Int: %d" (to_int i)
+  | VChar  c   -> sprintf "Char: %c" c
+  | VReal  r   -> sprintf "Real: %f" r
+  | VIdent v   -> sprintf "Undefined: %s" v
+  | VList  v   -> "VList: " ^ String.concat ", " (map format_value v)
+  | VNil       -> "Nil"
+  | VNone      -> "Nothing"
 
+let rec format_v = function
+    VBool  b   -> string_of_bool b
+  | VInt   i   -> string_of_int (to_int i)
+  | VChar  c   -> String.make 1 c
+  | VReal  r   -> string_of_float r
+  | VIdent v   -> v
+  | VList  v   -> "(" ^ String.concat ", " (map format_v v) ^ ")"
+  | VNil       -> "_"
+  | VNone      -> " "
 
 let format_var_type = function
     TBool -> "bool"
@@ -271,6 +284,9 @@ let format_var_type = function
   | TChar -> "char"
   | TReal -> "real"
   | TIdent v -> v
+
+let print_value = print_string @. format_value
+and print_v = print_string @. format_v
 
 let parse str = match str.[0] with
     '\'' -> assert (String.length str = 3 && str.[2] = '\''); VChar str.[1]
@@ -289,3 +305,45 @@ let check_type vtype value = match (vtype, value) with
   | (_, VNil) -> true
   | (_, VNone) -> true
   | _ -> false
+
+let rec format_expr = let f = format_expr in function
+  RValue   v     -> format_v v
+| Elist    lst   -> "(" ^ String.concat ", " (map f lst) ^ ")"
+| IntConv  a     -> "int " ^ f a
+| RealConv a     -> "real " ^ f a
+| Neg      a     -> "-" ^ f a
+| Add     (a, b) -> f a ^ " + " ^ f b
+| Minus   (a, b) -> f a ^ " - " ^ f b
+| Mult    (a, b) -> f a ^ " * " ^ f b
+| Divide  (a, b) -> f a ^ " / " ^ f b
+| Div     (a, b) -> f a ^ " div " ^ f b
+| Mod     (a, b) -> f a ^ " mod " ^ f b
+
+| Pre      a     -> "pre " ^ f a
+| Arrow   (a, b) -> f a ^ " -> " ^ f b
+| When    (a, b) -> f a ^ " when " ^ format_clock_expr b
+
+| Not      a     -> "not" ^ f a
+| And     (a, b) -> f a ^ "and" ^ f b
+| Or      (a, b) -> f a ^ "or"  ^ f b
+| Xor     (a, b) -> f a ^ "xor" ^ f b
+
+| Eq      (a, b) -> f a ^ " = "  ^ f b
+| Ne      (a, b) -> f a ^ " != " ^ f b
+| Lt      (a, b) -> f a ^ " < "  ^ f b
+| Gt      (a, b) -> f a ^ " > "  ^ f b
+| Lteq    (a, b) -> f a ^ " <= " ^ f b
+| Gteq    (a, b) -> f a ^ " >= " ^ f b
+
+| If      (c, a, b) -> "if" ^ f c ^ "then" ^ f a ^ "else" ^ f b
+| Case    (a, p) -> "case" ^ f a ^ "\n" ^ String.concat "\n" (map (fun (p, e) -> "|" ^ match p with PUnderscore -> "_" | PValue v -> format_v v ^ f e) p)
+
+| Temp           -> raise (Failure "Not supported")
+
+and format_clock_expr = function
+  CWhen v -> v
+| CNot v -> "not" ^ v
+| CMatch (v1, v2) -> v1 ^ "match" ^ v2
+
+let expr_formatter ppf = Format.fprintf ppf "%s" @. format_expr
+

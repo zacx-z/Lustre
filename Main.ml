@@ -6,6 +6,9 @@ open Type
 open Printf
 open Int32
 
+#install_printer expr_formatter;;
+
+(* Generic Helper Functions *)
 let find_replace func lst = match fold_left (fun (found, res) elem ->
         if found
         then (true, elem :: res)
@@ -35,6 +38,7 @@ let transpose = function
     | matrix -> fold_right (fun line res -> map (fun (l, r) -> l :: r)
                            (combine line res)) matrix (map (fun l -> []) (hd matrix))
 
+(* Interpreting Exceptions *)
 exception Type_mismatch of var_type * value
 exception Cyclic_dependence of string * string
 exception Invalid_if of expr * value
@@ -43,8 +47,10 @@ exception Case_not_match of expr * value
 exception Invalid_expr_in_when of expr * value
 exception Not_same_clock of expr * value list
 exception Not_same_clock' of clock_expr * value list
+(* Mediate Exceptions *)
 exception Failure_val of value
 
+(* Types for Interpretation *)
 type var = {
     name : string;
     is_clock : bool;
@@ -66,10 +72,12 @@ let check_type vtype value = match value with
            then raise (Type_mismatch (vtype, v))
 | _ -> ()
 
+(* Helpers *)
 let make_var (namelist, t, csexpr) = map (function varid -> 
     {name = (fst varid); is_clock = (snd varid); vtype = t; value = [] }) namelist
 let make_var_list lst = concat (map make_var lst)
 
+(* Print Functions *)
 let print_tval = function
     Undefined -> print_string "Undefined"
   | Evaluating -> print_string "Evaluating"
@@ -85,7 +93,7 @@ let print_context context =
     print_var_list context.local
 
 let rec print_program program =
-    printf "The program contains %d nodes:\n" (length program.nodes);
+    printf "The program contains %d node(s):\n" (length program.nodes);
     iter print_node program.nodes
 
 and print_node (name, node) = print_node_head node.header
@@ -107,6 +115,7 @@ and print_var_def (ids, var_type, _) = print_list (fun x ->
         print_char ':';
         print_string (format_var_type var_type)
 
+(* Context Manipulations *)
 let next_clock context input =
     try
         let grab_input name = if mem_assoc name input
@@ -143,6 +152,7 @@ let restore_fc context rst = { context with local = map (fun ((name, vr), rv) ->
 let clean_context context = { context with local = map (fun (name, vr) -> (name,
     if hd vr.value = Evaluating then { vr with value = Undefined :: tl vr.value } else vr)) context.local }
 
+(* finding and binding variables *)
 let lookup context name = assoc name context.local
 let bind_var context (name:string) (value:tval) : context =
     let tbl = context.local in
@@ -153,6 +163,8 @@ let bind_var context (name:string) (value:tval) : context =
             else None ) tbl }
 
 let hdv lst = if lst = [] then Val VNil else hd lst
+
+(* Main Calculation *)
 
 let rec eval_expr context expr : context * value =
     let get_val x =
@@ -290,9 +302,8 @@ and deduce_clock' context expr =
                    else if a = TUnknown && b = TUnknown then TUnknown
                    else TFalse
     and (@&) a b = if (a = TTrue || a = TUnknown) && b then TTrue else TFalse
-    and to_tb a = if a then TTrue else TFalse
-    (*function composition*)
-    and (@.) f g x = f (g x) in
+    and to_tb a = if a then TTrue else TFalse in
+
     let deduce = deduce_clock' context
     and deduce_val = function
       VIdent varname -> (match hdv (lookup context varname).value with
@@ -342,8 +353,9 @@ and deduce_clock' context expr =
 
     | Temp          -> raise (Failure "Not supported")
 
+(* Entry *)
 let run_node { header=(_, _, args, rets); locals = locals; equations = eqs } node_name input =
-    (* Build vars *)
+    (* build vars and context *)
     let vars_table = map (fun v -> (v.name, v)) in
     let output_vars = make_var_list rets in
     let context = { local = vars_table
@@ -353,15 +365,20 @@ let run_node { header=(_, _, args, rets); locals = locals; equations = eqs } nod
                     node_name = node_name;
                     clock = 0;
                     eqs = eqs } in
+    (* calculate a cycle *)
     let rec cycle (context, input) =
-    let (context, output) = fold_right (fun var (context, res) -> let (c, r) =
-        (solve_var context var.name)
-                                                        in (c, r::res))
-                    output_vars (context, []) in
+    let (context, output) = fold_right (fun var (context, res) ->
+                                        let (c, r) = (solve_var context var.name)
+                                        in (c, r::res))
+                                       output_vars (context, []) in
 
     print_list print_value output;
     print_newline ();
-    cycle (next_clock context input) in cycle (next_clock context input)
+    (* iterate: move on to next clock *)
+    cycle (next_clock context input)
+
+    in (* start *)
+    cycle (next_clock context input)
 
 
 let read_data_in fname =
