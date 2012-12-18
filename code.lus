@@ -2,7 +2,7 @@ node main(x:int; a:int) returns (s, v:int)
 var b : bool;
 let
     b = true -> not (pre b);
-    s = (1 -> (pre s + 1)) when b;
+    s = (1 when b -> ((pre s) + (1 when b)));
     v = 1 when b -> pre s;
 tel
 

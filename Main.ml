@@ -5,6 +5,7 @@ open List
 open Type
 open Printf
 open Int32
+exception F of expr
 
 let find_replace func lst = match fold_left (fun (found, res) elem ->
         if found
@@ -41,6 +42,7 @@ exception Invalid_if of expr
 exception Not_in_equation of string
 exception Case_not_match of value
 exception Invalid_expr_in_when of value
+exception Not_same_clock of expr * value list
 
 type var = {
     name : string;
@@ -54,12 +56,19 @@ and context = {
     clock : int;
     eqs : (lvalue list * expr) list
 }
+(* Three-value Logic for Clock Deduction *)
+and tbool = TTrue | TFalse | TUnknown
 
-let assert_type vtype value = match value with
+let check_type vtype value = match value with
   Val v -> if not (check_type vtype v)
            then raise (Type_mismatch (vtype, v))
-           else ()
 | _ -> ()
+
+(*let check_clock v1 v2 = match (v1, v2) with
+  (VNone, VNone) -> ()
+| (VNone, _) -> raise Not_same_clock
+| (_, VNone) -> raise Not_same_clock
+| _ -> ()*)
 
 let make_var (namelist, t, csexpr) = map (function varid -> 
     {name = (fst varid); is_clock = (snd varid); vtype = t; value = [] }) namelist
@@ -109,14 +118,14 @@ let next_clock context input =
         else Undefined in
         ({ context with
            local = map (fun (name, vr) -> (name, { vr with value =
-                                                   let v = grab_input vr.name in assert_type vr.vtype v; v :: vr.value
+                                                   let v = grab_input vr.name in check_type vr.vtype v; v :: vr.value
                                            })) context.local;
            clock = context.clock + 1
         }, map (fun (name, lst) -> (name, tl lst)) input)
     with
         Failure t when t = "hd" || t = "tl" -> raise (Failure "reach the end of input")
 
-let pre context = if context.clock > 0 
+let pre context = if context.clock > 0
     then let (prelst, cur) = split (map (fun (name, vr) ->
     ((name, { vr with value = tl vr.value }), hd vr.value)) context.local) in
     ({ context with local = prelst; clock = context.clock - 1 }, Some cur)
@@ -134,12 +143,16 @@ let fstclock context = let (fstlst, rst) = split (map (fun (name, vr) ->
 let restore_fc context rst = { context with local = map (fun ((name, vr), rv) ->
     (name, { vr with value = rev (vr.value @ rv) })) (combine context.local (snd rst)); clock = (fst rst) }
 
+(* remove all the evaluating flag*)
+let clean_context context = { context with local = map (fun (name, vr) -> (name,
+    if hd vr.value = Evaluating then { vr with value = Undefined :: tl vr.value } else vr)) context.local }
+
 let lookup context name = assoc name context.local
 let bind_var context (name:string) (value:tval) : context =
     let tbl = context.local in
     { context with local =
         find_replace (fun (_n, vr) -> if _n = name
-            then (assert_type vr.vtype value;
+            then (check_type vr.vtype value;
                  Some (name, {vr with value = value :: tl vr.value}))
             else None ) tbl }
 
@@ -151,12 +164,21 @@ let rec eval_expr context expr : context * value =
         match x with
           VIdent varname -> eval varname
         | t -> (context, t) in
+    let eval_lst lst =
+        let check_clock_lst (context, lst) =
+        if (for_all (fun x -> x = VNone) lst || (not (exists (fun x-> x = VNone) lst)))
+        then (context, lst)
+        else raise (Not_same_clock (expr, lst)) in
+        check_clock_lst (fold_right (fun expr (context, res) ->
+        let (c, r) = eval_expr context expr in (c, r :: res) )
+        lst (context, [])) in
+
     let eval2 op a b =
-        let (c1, ra) = eval_expr context a in
-        let (c2, rb) = eval_expr c1 b in
-        (c2, op ra rb)
+        let (c, [ra;rb]) = eval_lst [a;b] in (c, op ra rb)
     and eval1 op a =
-        let (c, r) = eval_expr context a in (c, op r)
+        let (c, [r]) = eval_lst [a] in (c, op r)
+
+    and arrow a b = if context.clock = 1 then a else b
         in match expr with
           Add    (a, b) -> eval2 vadd       a b
         | Minus  (a, b) -> eval2 vminus     a b
@@ -170,27 +192,31 @@ let rec eval_expr context expr : context * value =
 
         | RValue     v  -> get_val v
 
-        | Elist    lst  -> let (c, r) = (fold_right (fun expr (context, res) ->
-                           let (c, r) = eval_expr context expr in (c, r ::
-                               res) ) lst (context, [])) in
+        | Elist    lst  -> let (c, r) = eval_lst lst in
                            (c, match r with [v] -> v | _ -> VList r)
 
-        | Pre        a  -> let rec eval_pre context =
-                               let (precon, cur) = pre context in
-                               let (c, r) = eval_expr precon a in
-                               if r = VNone & c.clock != 0
-                               then let (c', r') = eval_pre c in (restore_pre c' cur, r')
-                               else (restore_pre c cur, r)
-                           in eval_pre context
+        | Pre        a  -> if deduce_clock (clean_context context) a then
+                               let rec eval_pre context =
+                                   let (precon, cur) = pre context in
+                                   let (c, r) = eval_expr precon a in
+                                   if r = VNone & c.clock != 0
+                                   then let (c', r') = eval_pre c in (restore_pre c' cur, r')
+                                   else (restore_pre c cur, r)
+                               in eval_pre context
+                           else (context, VNone)
 
-        | Arrow  (a, b) -> if context.clock = 1
-                           then let (fstcon, rst) = fstclock context in
-                                let (c, r) = eval_expr fstcon a in (restore_fc fstcon rst, r)
-                           else eval_expr context b
+        | Arrow  (a, b) -> eval2 arrow a b
         | When   (a, c) -> let (nc, cr) = eval_clock_expr context c in
-                           if cr
-                           then eval_expr nc a
-                           else (nc, VNone)
+                           (match cr with
+                             VBool v -> let (c, r) = eval_expr nc a in
+                                        if r = VNone then raise (Not_same_clock (expr, [r; cr]));
+                                        if v
+                                        then (c, r)
+                                        else (c, VNone)
+                           | VNone   -> let (c, r) = eval_expr nc a in
+                                        if r != VNone then raise (Not_same_clock (expr, [r; cr]));
+                                        (c, VNone)
+                           | _       -> raise (Invalid_expr_in_when cr))
 
         | Not        a  -> eval1 vnot  a
         | And    (a, b) -> eval2 vand  a b
@@ -240,16 +266,84 @@ and solve_var context varname : context * value =
     | Evaluating -> print_context context; raise (Cyclic_dependence varname)
 
 and eval_clock_expr context expr =
-    let exact_bool = function
-      VBool v -> v
+    let v_not = function
+      VBool v -> VBool (not v)
+    | VNone -> VNone
     | t -> raise (Invalid_expr_in_when t)
+    and v_eq v1 v2 = match (v1, v2) with
+      (VNone, VNone) -> VNone
+    (*| (VNone, _) -> raise (Not_same_clock (expr, [v1;v2]))
+    | (_, VNone) -> raise (Not_same_clock (expr, [v1;v2]))*)
+    | (a, b) -> VBool (a = b)
     in match expr with
-      CWhen varname -> let (c, r) = solve_var context varname in (c, exact_bool r)
-    | CNot  varname -> let (c, r) = solve_var context varname in (c, not (exact_bool r))
+      CWhen varname -> solve_var context varname
+    | CNot  varname -> let (c, r) = solve_var context varname in (c, v_not r)
     | CMatch (var1, var2) -> let (c1, r1) = solve_var context var1 in
                              let (c2, r2) = solve_var c1 var2 in
-                             (c2, r1 = r2)
+                             (c2, v_eq r1 r2)
 
+and deduce_clock context expr = match deduce_clock' context expr with
+  TTrue -> true
+| TFalse -> false
+| TUnknown -> true
+
+and deduce_clock' context expr =
+    (*A weird three-value logic*)
+    let (@-) a b = if a = TTrue || (a = TUnknown && b = TTrue) then TTrue
+                   else if a = TUnknown && b = TUnknown then TUnknown
+                   else TFalse
+    and (@&) a b = if (a = TTrue || a = TUnknown) && b then TTrue else TFalse
+    and to_tb a = if a then TTrue else TFalse
+    (*function composition*)
+    and (@.) f g x = f (g x) in
+    let deduce = deduce_clock' context
+    and deduce_val = function
+      VIdent varname -> (match hdv (lookup context varname).value with
+                        Evaluating -> TUnknown
+                      | Undefined  ->
+                        let nc = bind_var context varname Evaluating in
+                        let eq = try find
+                                (fun (lhs, expr) -> exists
+                                    (function LIdent name -> name = varname | _ -> false) lhs) context.eqs
+                                with Not_found -> raise (Not_in_equation varname) in
+                        deduce_clock' nc (snd eq)
+                      | Val v      -> to_tb (not (v = VNone)))
+    | t -> TTrue
+
+    in match expr with
+      Add    (a, b) -> deduce a @- deduce b
+    | Minus  (a, b) -> deduce a @- deduce b
+    | Mult   (a, b) -> deduce a @- deduce b
+    | Divide (a, b) -> deduce a @- deduce b
+    | Div    (a, b) -> deduce a @- deduce b
+    | Mod    (a, b) -> deduce a @- deduce b
+    | Neg        a  -> deduce a
+    | RealConv   a  -> deduce a
+    | IntConv    a  -> deduce a
+
+    | RValue     v  -> deduce_val v
+
+    | Elist    lst  -> deduce (hd lst) (*TODO*)
+
+    | Not        a  -> deduce a
+    | And    (a, b) -> deduce a @- deduce b
+    | Or     (a, b) -> deduce a @- deduce b
+    | Xor    (a, b) -> deduce a @- deduce b
+    | Eq     (a, b) -> deduce a @- deduce b
+    | Ne     (a, b) -> deduce a @- deduce b
+    | Lt     (a, b) -> deduce a @- deduce b
+    | Gt     (a, b) -> deduce a @- deduce b
+    | Lteq   (a, b) -> deduce a @- deduce b
+    | Gteq   (a, b) -> deduce a @- deduce b
+
+    | If  (c, a, b) -> deduce c @- deduce a @- deduce b
+    | Case   (a, p) -> deduce a @- fold_right (@-) (map (deduce @. snd) p) TUnknown (*Is it lazy? Maybe needing some optimization*)
+
+    | Pre        a  -> deduce a
+    | When   (a, b) -> deduce a @& (let (c, r) = eval_clock_expr context b in (match r with VBool v -> v | _ -> raise (Invalid_expr_in_when r)))
+    | Arrow  (a, b) -> deduce a @- deduce b
+
+    | Temp          -> raise (Failure "Not supported")
 
 let run_node { header=(_, _, args, rets); locals = locals; equations = eqs } input =
     (* Build vars *)

@@ -39,7 +39,7 @@ There is also another small problem. Consider the following equation:
 s = 1 -> (pre s + 1)
 ```
 
-If we evaluate the value recursively, when we evaluate `pre s`, we need to get the value of `s` to update the state. However, `pre s` hasn't been return now so we do not know what's the current value of `s`. A deadlock here. This should be treated specially. We need a two-pass evaluation: in the first evaluation values of variables are calculated; in the second value states of `pre`s are calculated and updated.
+If we evaluate the value recursively, when we evaluate `pre s`, we need to get the value of `s` to update the state. However, `pre s` hasn't been return now so we do not know what's the current value of `s`. A deadlock here. This should be treated specially. We need a two-pass evaluation: in the first evaluation values of variables are calculated; in the second one value states of `pre`s are calculated and updated.
 
 
 ## Problems and Solutions
