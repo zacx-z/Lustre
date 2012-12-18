@@ -3,6 +3,6 @@ var b : bool;
 let
     b = true -> not (pre b);
     s = (1 when b -> ((pre s) + (1 when b)));
-    v = (1 -> x) when not b;
+    v = current s;
 tel
 

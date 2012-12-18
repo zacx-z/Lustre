@@ -112,6 +112,7 @@ rule initial = parse
     (* tempo *)
     | "when"                    { WHEN          }
     | "pre"                     { PRE           }
+    | "current"                 { CURRENT       }
     | "fby"                     { FBY           }
     | "->"                      { ARROW         }
     | "times"                   { TIMES         }

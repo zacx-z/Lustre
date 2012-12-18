@@ -23,7 +23,7 @@ let parse_error info = let pos = Parsing.symbol_start_pos() in
 %token PLUS MINUS MULT DIVIDE MOD DIV         /* arithmetic */
 %token AND OR XOR NOT SHARP                   /* logic      */
 %token EQ NE LT LTEQ GT GTEQ                  /* relation   */
-%token WHEN PRE FBY ARROW TIMES MATCH MERGE   /* tempo      */
+%token WHEN PRE CURRENT FBY ARROW TIMES MATCH MERGE   /* tempo      */
 %token IF THEN ELSE CASE OF                   /* switch     */
 %token DOT                                    /* struct     */
 %token CARET AT REVERSE DOTDOT                /* array      */
@@ -62,7 +62,7 @@ let parse_error info = let pos = Parsing.symbol_start_pos() in
 %left       PLUS MINUS
 %left       MULT DIVIDE MOD DIV
 %nonassoc   UPLUS UMINUS
-%nonassoc   PRE
+%nonassoc   PRE CURRENT
 %nonassoc   REVERSE INT REAL
 %nonassoc   WHEN
 %nonassoc   NOT
@@ -297,6 +297,7 @@ list_expr:
 
 tempo_expr:
   | PRE expr                              { Pre $2 }
+  | CURRENT expr                          { Current $2 }
   | expr ARROW expr                       { Arrow ($1, $3) }
   | expr WHEN clock_expr                  { When ($1, $3) }
 //  | FBY LPAREN elist SEMICOLON CONST_INT SEMICOLON elist RPAREN

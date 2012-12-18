@@ -29,6 +29,7 @@ and expr = RValue   of value
          | Mod      of expr * expr
 
          | Pre      of expr
+         | Current  of expr
          | Arrow    of expr * expr
          | When     of expr * clock_expr
 
@@ -320,6 +321,7 @@ let rec format_expr = let f = format_expr in function
 | Mod     (a, b) -> f a ^ " mod " ^ f b
 
 | Pre      a     -> "pre " ^ f a
+| Current  a     -> "current " ^ f a
 | Arrow   (a, b) -> f a ^ " -> " ^ f b
 | When    (a, b) -> f a ^ " when " ^ format_clock_expr b
 
