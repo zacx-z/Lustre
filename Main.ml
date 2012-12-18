@@ -1,5 +1,6 @@
 open Parser
 open Lexer
+open Lexing
 open Printf
 open List
 open Type
@@ -392,7 +393,10 @@ let read_data_in fname =
 
 let _ =
     try
-        let lexbuf = Lexing.from_channel (open_in "code.lus")  in
+        let filename = "code.lus" in
+        let lexbuf = Lexing.from_channel (open_in filename)  in
+        let _ = lexbuf.lex_start_p <- { lexbuf.lex_start_p with pos_fname = filename };
+                lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename } in
             let result = Parser.file Lexer.initial lexbuf in
                 print_program result;
                 let node = assoc "main" result.nodes
