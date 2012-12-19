@@ -61,15 +61,22 @@ s = (1 when b) -> (pre s)
 
 In this equation the current clock of `s` depends on itself as well. But we have more clues: because the clock `1 when b` is on `b`, so the clock of s is deduced to be on `b`. We have a clock deduction here.
 
-#### Conclusion
+#### Solution
 
 We need a clock deduction on the time operators, and if the clock can't be deduced, it will be set as basic clock as default.
 
 ### List Evaluations
 
-Lustre support assigning multiple variables at one time, like this:
+We would like our lustre interpreter to support assigning multiple variables at one time like this:
 ```lustre
 (a, b) = (1 -> pre b + 1, a)
 ```
-TODO
+Intuitively, we would evaluate a list expression at one time. However, the list expression above depends on the left side. So list expressions can't be evaluated at one time.
 
+#### Solution 1
+
+Every time evaluating a expression, since it may yield a list, we need a number to select which element of the expression in order to assign it to the corresponding element in the left.
+
+#### Solution 2
+
+Precompiling expressions and splitting them into single assignments.

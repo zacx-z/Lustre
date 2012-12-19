@@ -75,6 +75,8 @@ let vmult a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (mul x y)
     | (VReal x, VReal y) -> VReal (x *. y)
+    | (VInt x, VReal y) -> VReal ((to_float x) *. y)
+    | (VReal x, VInt y) -> VReal (x *. (to_float y))
     | (VNil, _) -> VNil
     | (_, VNil) -> VNil
     | (VNone, VNone) -> VNone
@@ -85,6 +87,8 @@ let vadd a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (add x y)
     | (VReal x, VReal y) -> VReal (x +. y)
+    | (VInt x, VReal y) -> VReal ((to_float x) +. y)
+    | (VReal x, VInt y) -> VReal (x +. (to_float y))
     | (VNil, _) -> VNil
     | (_, VNil) -> VNil
     | (VNone, VNone) -> VNone
@@ -95,6 +99,8 @@ let vminus a b =
     match (a, b) with
       (VInt x, VInt y) -> VInt (sub x y)
     | (VReal x, VReal y) -> VReal (x -. y)
+    | (VInt x, VReal y) -> VReal ((to_float x) -. y)
+    | (VReal x, VInt y) -> VReal (x -. (to_float y))
     | (VNil, _) -> VNil
     | (_, VNil) -> VNil
     | (VNone, VNone) -> VNone
@@ -104,6 +110,9 @@ let vminus a b =
 let vdivide a b =
     match (a, b) with
       (VReal x, VReal y) -> VReal (x /. y)
+    | (VInt x, VReal y) -> VReal ((to_float x) /. y)
+    | (VReal x, VInt y) -> VReal (x /. (to_float y))
+    | (VInt x, VInt y) -> VReal ((to_float x) /. (to_float y))
     | (VNil, _) -> VNil
     | (_, VNil) -> VNil
     | (VNone, VNone) -> VNone
