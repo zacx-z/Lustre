@@ -271,7 +271,7 @@ expr:
   | relation_expr                         { $1 }
   | bool_expr                             { $1 }
   | switch_expr                           { $1 }
-  | apply_expr                            { Temp }
+  | apply_expr                            { $1 }
 //   | array_expr      
 //   | struct_expr     
   ;
@@ -351,7 +351,7 @@ case_expr:
   ;
 
 apply_expr:
-  | ident_nonlocal LPAREN elist RPAREN    { 1 }
+  | ident_nonlocal LPAREN elist RPAREN    { Apply ($1, $3) }
   ;
 
 // 

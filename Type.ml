@@ -47,7 +47,7 @@ and expr = RValue   of value
          | If       of expr * expr * expr
          | Case     of expr * (pattern * expr) list
 
-         | Temp
+         | Apply    of string * expr list
 and pattern = PUnderscore | PValue of value
 and clock_expr = CWhen of string | CNot of string | CMatch of string * string
 
@@ -346,7 +346,7 @@ let rec format_expr = let f = format_expr in function
 | If      (c, a, b) -> "if" ^ f c ^ "then" ^ f a ^ "else" ^ f b
 | Case    (a, p) -> "case" ^ f a ^ "\n" ^ String.concat "\n" (map (fun (p, e) -> "|" ^ match p with PUnderscore -> "_" | PValue v -> format_v v ^ f e) p)
 
-| Temp           -> raise (Failure "Not supported")
+| Apply   (name, args) -> raise (Failure "Not supported")
 
 and format_clock_expr = function
   CWhen v -> v

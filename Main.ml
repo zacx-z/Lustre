@@ -69,7 +69,8 @@ and context = {
     local : (string * var) list;
     node_name : string;
     clock : int;
-    eqs : (lvalue list * expr) list
+    eqs : (lvalue list * expr) list;
+    program : program
 }
 (* Three-value Logic for Clock Deduction *)
 and tbool = TTrue | TFalse | TUnknown
@@ -97,6 +98,8 @@ let print_var_list vlst  =
 
 let print_context context =
     print_string "-------- context --------\n";
+    printf "In the node: %s\n" context.node_name;
+    printf "Clock: %d\n" context.clock;
     print_var_list context.local
 
 let rec print_program program =
@@ -208,7 +211,7 @@ let rec length_expr expr =
     | Case   (a, p) -> (match map snd p with
                          h :: rst -> fold_left (@=) (l h) rst
                        | []       -> 1 (* error indeed *))
-    | Temp          -> raise (Failure "Not supported")
+    | Apply  (name, args) -> raise (Failure "Not supported")
 
 
 (* Main Calculation *)
@@ -313,7 +316,7 @@ let rec eval_expr context n expr: context * value =
                                     with Not_found -> raise (Case_not_match (expr, v)) in
                        eval_expr c n b
 
-    | Temp          -> raise (Failure "Not supported")
+    | Apply  (name, args) -> raise (Failure "Not supported")
 
 and solve_var context varname : context * value =
     let eqs = context.eqs in
@@ -413,11 +416,9 @@ and deduce_clock' context n expr =
     | When   (a, b) -> deduce a @& (let (c, r) = eval_clock_expr context b in (match r with VBool v -> v | _ -> raise (Invalid_expr_in_when (expr, r))))
     | Arrow  (a, b) -> deduce a @- deduce b
 
-    | Temp          -> raise (Failure "Not supported")
+    | Apply  (name, args) -> raise (Failure "Not supported")
 
-(* Entry *)
-let run_node { header=(_, _, args, rets); locals = locals; equations = eqs } node_name input =
-    (* build vars and context *)
+let build_vars_table { header=(_, _, args, rets); locals = locals; equations = eqs } =
     let vars_table = map (fun v -> (v.name, v))
                   @. concat @. map snd
                   @. fold_left (fun cur (sname, lst) ->
@@ -430,13 +431,20 @@ let run_node { header=(_, _, args, rets); locals = locals; equations = eqs } nod
                          (fun v cur -> if exists (fun v' -> v'.name = v.name) cur
                                        then raise (Multi_var_defs (v.name, sname, sname));
                                        v::cur) lst []))  in
+    vars_table [("input", (make_var_list args));
+                ("output", (make_var_list rets));
+                ("local", (make_var_list locals))]
+
+(* Entry *)
+let run node node_name program input =
+    match node with { header=(_, _, args, rets); locals = locals; equations = eqs } ->
+    (* build context *)
     let output_vars = make_var_list rets in
-    let context = { local = vars_table [("input", (make_var_list args));
-                                        ("output", (output_vars));
-                                        ("local", (make_var_list locals))];
+    let context = { local = build_vars_table node;
                     node_name = node_name;
                     clock = 0;
-                    eqs = eqs } in
+                    eqs = eqs;
+                    program = program } in
     (* calculate a cycle *)
     let rec cycle (context, input) =
     let (context, output) = fold_right (fun var (context, res) ->
@@ -473,9 +481,10 @@ let _ =
                 let node = assoc "main" result.nodes
                 and get_args (_, _, args, _) = args in
                 let in_argsname = (map (fun vr -> vr.name) (make_var_list (get_args node.header))) in
-                run_node node
-                         "main"
-                         (combine in_argsname (transpose (read_data_in "in.data")))
+                run node
+                    "main"
+                    result
+                    (combine in_argsname (transpose (read_data_in "in.data")))
 
     with
     (Parse_Error str) ->
