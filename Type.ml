@@ -12,7 +12,6 @@ and var_type = TBool | TInt | TChar | TReal | TIdent of string
 and lvalue = LIdent of string | Underscore
 and value = VBool of bool | VInt of int32 | VChar of char | VReal of float
           | VIdent of string
-          | VList of value list
           | VNil  (*produced by pre operator*)
           | VNone (*not in clock cycle *)
 (* and stream = { run: value list -> stream * value } *)
@@ -274,7 +273,6 @@ let rec format_value = function
   | VChar  c   -> sprintf "Char: %c" c
   | VReal  r   -> sprintf "Real: %f" r
   | VIdent v   -> sprintf "Undefined: %s" v
-  | VList  v   -> "VList: " ^ String.concat ", " (map format_value v)
   | VNil       -> "Nil"
   | VNone      -> "Nothing"
 
@@ -284,7 +282,6 @@ let rec format_v = function
   | VChar  c   -> String.make 1 c
   | VReal  r   -> string_of_float r
   | VIdent v   -> v
-  | VList  v   -> "(" ^ String.concat ", " (map format_v v) ^ ")"
   | VNil       -> "_"
   | VNone      -> " "
 
