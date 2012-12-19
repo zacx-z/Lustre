@@ -150,8 +150,10 @@ let restore_fc context rst = { context with local = map (fun ((name, vr), rv) ->
     (name, { vr with value = rev (vr.value @ rv) })) (combine context.local (snd rst)); clock = (fst rst) }
 
 (* remove all the evaluating flag*)
-let clean_context context = { context with local = map (fun (name, vr) -> (name,
-    if hd vr.value = Evaluating then { vr with value = Undefined :: tl vr.value } else vr)) context.local }
+let clean_context context = if context.clock > 0
+    then { context with local = map (fun (name, vr) -> (name,
+         if hd vr.value = Evaluating then { vr with value = Undefined :: tl vr.value } else vr)) context.local }
+    else context
 
 (* finding and binding variables *)
 let lookup context name = assoc name context.local

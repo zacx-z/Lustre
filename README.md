@@ -6,7 +6,7 @@ Type command `make run` to run the code. The interpreter will interpret the lust
 
 ### Input Format
 
-The input file given data in text format (ASCII). Each line represents input values in a basic clock, and each input value in a line is separated by whitespaces. There are four types of data: int, real, char, bool.
+The input file gives data in text format (ASCII). Each line represents input values in a basic clock, and each input value in a line is separated by whitespaces. There are four types of data: int, real, char, bool.
 
  *  **int:** written in number, like `12`, `23`.
  *  **real:** written in number that has a period, like `8.`, `7.6`.
@@ -64,4 +64,12 @@ In this equation the current clock of `s` depends on itself as well. But we have
 #### Conclusion
 
 We need a clock deduction on the time operators, and if the clock can't be deduced, it will be set as basic clock as default.
+
+### List Evaluations
+
+Lustre support assigning multiple variables at one time, like this:
+```lustre
+(a, b) = (1 -> pre b + 1, a)
+```
+TODO
 

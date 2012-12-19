@@ -347,5 +347,7 @@ and format_clock_expr = function
 | CNot v -> "not" ^ v
 | CMatch (v1, v2) -> v1 ^ "match" ^ v2
 
+let print_expr = print_string @. format_expr
+
 let expr_formatter ppf = Format.fprintf ppf "%s" @. format_expr
 

@@ -1,8 +1,9 @@
 node main(x:int; a:int) returns (s, v:int)
-var b : bool;
+var b : bool; t : int;
 let
+    t = 1 -> pre t + 1;
     b = true -> not (pre b);
     s = (1 when b -> ((pre s) + (1 when b)));
-    v = current s;
+    v = current t;
 tel
 
