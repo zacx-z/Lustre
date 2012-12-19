@@ -54,6 +54,7 @@ exception Invalid_expr_in_when of expr * value
 exception Not_same_clock of expr * value list
 exception Not_same_clock' of clock_expr * value list
 exception Not_same_length of expr
+exception Not_same_length' of lvalue list * expr
 (* Mediate Exceptions *)
 exception Failure_val of value
 
@@ -440,6 +441,8 @@ let run node node_name program input =
     match node with { header=(_, _, args, rets); locals = locals; equations = eqs } ->
     (* build context *)
     let output_vars = make_var_list rets in
+    let _ = iter (fun (lhs, expr) -> if (length lhs != length_expr expr)
+                                     then raise (Not_same_length' (lhs, expr))) eqs in
     let context = { local = build_vars_table node;
                     node_name = node_name;
                     clock = 0;
