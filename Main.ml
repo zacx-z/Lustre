@@ -40,6 +40,7 @@ let transpose = function
                            (combine line res)) matrix (map (fun l -> []) (hd matrix))
 
 (* Interpreting Exceptions *)
+exception Multi_var_defs of string * string * string
 exception Type_mismatch of var_type * value
 exception Cyclic_dependence of string * string
 exception Invalid_if of expr * value
@@ -368,12 +369,22 @@ and deduce_clock' context expr =
 (* Entry *)
 let run_node { header=(_, _, args, rets); locals = locals; equations = eqs } node_name input =
     (* build vars and context *)
-    let vars_table = map (fun v -> (v.name, v)) in
+    let vars_table = map (fun v -> (v.name, v))
+                  @. concat @. map snd
+                  @. fold_left (fun cur (sname, lst) ->
+                                iter (fun v ->
+                                      iter (fun (sname', s) ->
+                                          if exists (fun v' -> v'.name = v.name) s
+                                          then raise (Multi_var_defs (v.name, sname, sname'))) cur) lst;
+                                cur @ [(sname,lst)]) []
+                  @. map (fun (sname, lst) -> (sname, fold_right
+                         (fun v cur -> if exists (fun v' -> v'.name = v.name) cur
+                                       then raise (Multi_var_defs (v.name, sname, sname));
+                                       v::cur) lst []))  in
     let output_vars = make_var_list rets in
-    let context = { local = vars_table
-                           (concat [(make_var_list args);
-                                    (output_vars);
-                                    (make_var_list locals)]);
+    let context = { local = vars_table [("input", (make_var_list args));
+                                        ("output", (output_vars));
+                                        ("local", (make_var_list locals))];
                     node_name = node_name;
                     clock = 0;
                     eqs = eqs } in

@@ -3,8 +3,10 @@ open Type
 open Int32
 open Lexing
 
+exception Parse_Error of string
+
 let parse_error info = let pos = Parsing.symbol_start_pos() in
-    raise (Failure (Printf.sprintf "%s - %d: %s" pos.pos_fname pos.pos_lnum info))
+    raise (Parse_Error (Printf.sprintf "%s - %d: %s" pos.pos_fname pos.pos_lnum info))
 %}
 
 /* package */

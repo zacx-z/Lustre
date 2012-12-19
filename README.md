@@ -50,7 +50,7 @@ Think about the following equation:
 ```lustre
 s = pre s
 ```
-This may produce nil, nil, nil, ... , normally. A useless value.
+This may produce nil, nil, nil, ... , a useless value.
 
 When we evaluate an expression like `pre s`, what we do is to check the current clock of `s` (whether `s` is in its clock cycle) since `pre s` would return a value of the same clock as that of `s`. In this equation, `pre s` is assigned to `s`. So the current clock of `s` depends on itself. We could set it "on clock" or even "off clock". Weird? This may yield an error since no one will expect a variable of nil values, or we could also set it "on clock" as default to avoid the error.
 
@@ -65,7 +65,7 @@ In this equation the current clock of `s` depends on itself as well. But we have
 
 We need a clock deduction on the time operators, and if the clock can't be deduced, it will be set as basic clock as default.
 
-### List Evaluations
+### List Assignments
 
 We would like our lustre interpreter to support assigning multiple variables at one time like this:
 ```lustre
@@ -75,7 +75,7 @@ Intuitively, we would evaluate a list expression at one time. However, the list 
 
 #### Solution 1
 
-Every time evaluating a expression, since it may yield a list, we need a number to select which element of the expression in order to assign it to the corresponding element in the left.
+Every time evaluating a expression, since it may yield a list, we need a number to select the element of the expression in order to assign it to the corresponding element in the left.
 
 #### Solution 2
 
