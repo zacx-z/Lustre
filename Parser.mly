@@ -351,7 +351,7 @@ case_expr:
   ;
 
 apply_expr:
-  | ident_nonlocal LPAREN elist RPAREN    { Apply ($1, $3) }
+  | ident_nonlocal LPAREN elist RPAREN    { Apply (0, $1, $3) }
   ;
 
 // 

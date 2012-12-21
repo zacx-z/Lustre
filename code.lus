@@ -2,7 +2,12 @@ node main(x:int; a:int) returns (s, v:int)
 var b : bool; t : int;
 let
     t, b = (1 -> pre t + 1, true -> not (pre b));
-    s = (1 when b -> ((pre s) + (1 when b)));
-    v = current t;
+    -- s = (1 when b -> ((pre s) + (1 when b)));
+    v, s = add1(current t);
 tel
 
+node add1(x:int) returns (y, z:int)
+let
+    y = x + 1;
+    z = y + 1;
+tel
