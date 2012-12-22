@@ -8,8 +8,7 @@ let (@.) f g x = f (g x)
 type id = int
 
 type node_type = Node | Function
-and var_def = var_id list * var_type * clock_expr option
-and var_id = string * bool
+and var_def = string * var_type * clock_expr option
 and var_type = TBool | TInt | TChar | TReal | TIdent of string
 and lvalue = LIdent of string | Underscore
 and value = VBool of bool | VInt of int32 | VChar of char | VReal of float
@@ -63,6 +62,9 @@ type program = {
     nodes : (string * node) list;
     types : int list
 }
+
+let expand_vars names vtype c_expr =
+    map (fun name -> (name, vtype, c_expr)) names
 
 
 (* Calculation *)

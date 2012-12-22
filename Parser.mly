@@ -166,7 +166,7 @@ local_block:
 
 var_decls2:
   | /* empty */                           { [] }
-  | var_decl SEMICOLON var_decls2         { $1 :: $3 }
+  | var_decl SEMICOLON var_decls2         { $1 @ $3 }
   ;
 
 params:
@@ -175,12 +175,12 @@ params:
   ;
 
 var_decls:
-  | var_decl                              { [$1] }
-  | var_decl SEMICOLON var_decls          { $1 :: $3 }
+  | var_decl                              { $1 }
+  | var_decl SEMICOLON var_decls          { $1 @ $3 }
   ;
 
 var_decl:
-  | var_ids COLON type_expr when_decl     { ($1, $3, $4) }
+  | var_ids COLON type_expr when_decl     { expand_vars $1 $3 $4 }
   ;
 
 when_decl:
@@ -195,13 +195,8 @@ csexpr:
   ;
 
 var_ids:
-  | var_id                                { [$1] }
-  | var_id COMMA var_ids                  { $1 :: $3 }
-  ;
-
-var_id:
-  | CLOCK IDENT                           { ($2, true) }
-  | IDENT                                 { ($1, false) }
+  | IDENT                                { [$1] }
+  | IDENT COMMA var_ids                  { $1 :: $3 }
   ;
 
 optional_semicolon:

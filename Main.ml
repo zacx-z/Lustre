@@ -66,7 +66,6 @@ exception Failure_val of value
 (* Types for Interpretation *)
 type var = {
     name : string;
-    is_clock : bool;
     vtype : var_type;
     value : tval list
 }
@@ -88,9 +87,9 @@ let check_type vtype value = match value with
 | _ -> ()
 
 (* Helpers *)
-let make_var (namelist, t, csexpr) = map (function varid -> 
-    {name = (fst varid); is_clock = (snd varid); vtype = t; value = [] }) namelist
-let make_var_list lst = concat (map make_var lst)
+let make_var (name, t, csexpr) =
+    {name = name; vtype = t; value = [] }
+let make_var_list lst = map make_var lst
 
 (* Print Functions *)
 let print_tval = function
@@ -127,8 +126,8 @@ and print_node_type t = match t with
     Node -> print_string " - node:"
   | Function -> print_string " - function:"
 and print_params pms = print_list print_var_def pms; print_newline ()
-and print_var_def (ids, var_type, _) = print_list (fun x ->
-        print_string (fst x)) ids;
+and print_var_def (name, var_type, _) =
+        print_string name;
         print_char ':';
         print_string (format_var_type var_type)
 
@@ -396,20 +395,22 @@ let rec eval_expr context n expr: context * value =
                                  let sync_context context' context =
                                      match node.header with (_, _, fs, _) ->
                                      let rec calc c' c =
-                                         let ct = if c'.clock > c.clock
-                                                  then calc (fst (pre c')) c
-                                                  else c in
+                                         let (c', ct) = if c'.clock > c.clock
+                                                  then let (c'_pre, ri) = pre c' in
+                                                       let (tc, c) = calc c'_pre c in
+                                                       (restore_pre c'_pre ri, c)
+                                                  else (c', c) in
                                          if c'.clock > c.clock
-                                         then let (_, vals) = eval_lst context' args in
-                                            fst (next_clock ct (combine (map (fun vr -> vr.name) (make_var_list fs)) (map (fun v -> [v]) vals)))
-                                         else ct
-                                     in calc context' context in
+                                         then let (c'', vals) = eval_lst c' args in
+                                            (c'', fst (next_clock ct (combine
+                                            (map (fun vr -> vr.name) (make_var_list fs)) (map (fun v -> [v]) vals))))
+                                         else (c', ct)
+                                     in snd (calc context' context) in
                                  let (found, nc) = (try (true, snd (assoc id context.node_ins))
                                                     with Not_found ->
                                                         (false, build_context context.program node name)) in
                                  let outname = match node.header with (_, _, _, rets) ->
-                                     let out_vars = concat (map (fun (ids, _, _) -> map fst ids) rets) in
-                                     select out_vars n in
+                                     match select rets n with (name, _, _) -> name in
                                  let (c, r) = solve_var (sync_context context nc) outname in
                                  ({ context with node_ins = if found
                                      then find_replace
