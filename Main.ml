@@ -405,13 +405,14 @@ let rec eval_expr context n expr: context * value =
                                             (c'', fst (next_clock ct (combine
                                             (map (fun vr -> vr.name) (make_var_list fs)) (map (fun v -> [v]) vals))))
                                          else (c', ct)
-                                     in snd (calc context' context) in
+                                     in calc context' context in
                                  let (found, nc) = (try (true, snd (assoc id context.node_ins))
                                                     with Not_found ->
                                                         (false, build_context context.program node name)) in
                                  let outname = match node.header with (_, _, _, rets) ->
                                      match select rets n with (name, _, _) -> name in
-                                 let (c, r) = solve_var (sync_context context nc) outname in
+                                 let (context, nc') = sync_context context nc in
+                                 let (c, r) = solve_var nc' outname in
                                  ({ context with node_ins = if found
                                      then find_replace
                                         (fun (id', (name, _)) ->
@@ -518,7 +519,12 @@ and deduce_clock' context n expr =
     | When   (a, b) -> deduce a @& (let (c, r) = eval_clock_expr context b in (match r with VBool v -> v | _ -> raise (Invalid_expr_in_when (expr, r))))
     | Arrow  (a, b) -> deduce a @- deduce b
 
-    | Apply  (id, name, args) -> TTrue (* TODO *)
+    | Apply  (id, name, args) -> let node = get_node name context.program in
+                                 match node.header with (_, _, args, rets) ->
+                                     let (_, _, ce) = select rets n in
+                                     match ce with
+                                       None -> TTrue
+                                     | Some exp -> TTrue (* TODO hard *)
 
 
 (* Entry *)
