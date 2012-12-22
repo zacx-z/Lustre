@@ -67,9 +67,11 @@ exception Failure_val of value
 type var = {
     name : string;
     vtype : var_type;
-    value : tval list
+    value : tval list;
+    prop : property
 }
 and tval = Undefined | Evaluating | Val of value
+and property = Local | Input | Output
 and context = {
     local : (string * var) list;
     node_name : string;
@@ -77,6 +79,7 @@ and context = {
     eqs : (lvalue list * expr) list;
     program : program;
     node_ins : (id * (string * context)) list;
+    parent : context option
 }
 (* Three-value Logic for Clock Deduction *)
 and tbool = TTrue | TFalse | TUnknown
@@ -87,9 +90,9 @@ let check_type vtype value = match value with
 | _ -> ()
 
 (* Helpers *)
-let make_var (name, t, csexpr) =
-    {name = name; vtype = t; value = [] }
-let make_var_list lst = map make_var lst
+let make_var property (name, t, csexpr) =
+    {name = name; vtype = t; value = []; prop = property }
+let make_var_list property lst = map (make_var property) lst
 
 (* Print Functions *)
 let print_tval = function
@@ -224,7 +227,7 @@ let rec length_expr context expr =
                          h :: rst -> fold_left (@=) (l h) rst
                        | []       -> 1 (* error indeed *))
     | Apply  (id, name, args) -> match (assoc name context.program.nodes).header with
-                                 (_, _, _, rets) -> length (make_var_list rets)
+                                 (_, _, _, rets) -> length rets
 
 
 type compile_context = { mutable apply_id : int }
@@ -262,7 +265,7 @@ let rec precompile' context expr =
 
 let precompile = precompile' { apply_id = 0 }
 
-let build_context program node node_name =
+let build_context program node node_name parent =
     let build_vars_table { header=(_, _, args, rets); locals = locals; equations = eqs } =
         let vars_table = map (fun v -> (v.name, v))
                       @. concat @. map snd
@@ -276,16 +279,17 @@ let build_context program node node_name =
                              (fun v cur -> if exists (fun v' -> v'.name = v.name) cur
                                            then raise (Multi_var_defs (v.name, sname, sname));
                                            v::cur) lst []))  in
-        vars_table [("input", (make_var_list args));
-                    ("output", (make_var_list rets));
-                    ("local", (make_var_list locals))] in
+        vars_table [("input", (make_var_list Input args));
+                    ("output", (make_var_list Output rets));
+                    ("local", (make_var_list Local locals))] in
     match node with { header=(_, _, args, rets); locals = locals; equations = eqs } ->
     { local = build_vars_table node;
       node_name = node_name;
       clock = 0;
       eqs = map (fun (lhs, expr) ->  (lhs, precompile expr)) eqs;
       program = program;
-      node_ins = [] }
+      node_ins = [];
+      parent = parent }
 
 (* Main Calculation *)
 
@@ -402,13 +406,13 @@ let rec eval_expr context n expr: context * value =
                                                   else (c', c) in
                                          if c'.clock > c.clock
                                          then let (c'', vals) = eval_lst c' args in
-                                            (c'', fst (next_clock ct (combine
-                                            (map (fun vr -> vr.name) (make_var_list fs)) (map (fun v -> [v]) vals))))
+                                            (c'', fst (next_clock ct (combine (map (fun (name, _, _) -> name) fs) (map (fun v -> [v]) vals))))
                                          else (c', ct)
                                      in calc context' context in
                                  let (found, nc) = (try (true, snd (assoc id context.node_ins))
                                                     with Not_found ->
-                                                        (false, build_context context.program node name)) in
+                                                        (false, build_context
+                                                        context.program node name (Some context))) in
                                  let outname = match node.header with (_, _, _, rets) ->
                                      match select rets n with (name, _, _) -> name in
                                  let (context, nc') = sync_context context nc in
@@ -531,16 +535,16 @@ and deduce_clock' context n expr =
 let run node node_name program input =
     match node with { header=(_, _, args, rets); locals = locals; equations = eqs } ->
     (* build context *)
-    let output_vars = make_var_list rets in
-    let context = build_context program node node_name in
+    let out_varname = map (fun (name, _, _) -> name) rets in
+    let context = build_context program node node_name None in
     let _ = iter (fun (lhs, expr) -> if (length lhs != length_expr context expr)
                                      then raise (Not_same_length' (lhs, expr))) eqs in
     (* calculate a cycle *)
     let rec cycle (context, input) =
-    let (context, output) = fold_right (fun var (context, res) ->
-                                        let (c, r) = (solve_var context var.name)
+    let (context, output) = fold_right (fun varname (context, res) ->
+                                        let (c, r) = (solve_var context varname)
                                         in (c, r::res))
-                                        output_vars (context, []) in
+                                        out_varname (context, []) in
 
     print_list print_value output;
     print_newline ();
@@ -570,7 +574,7 @@ let _ =
                 print_program result;
                 let node = get_node "main" result
                 and get_args (_, _, args, _) = args in
-                let in_argsname = (map (fun vr -> vr.name) (make_var_list (get_args node.header))) in
+                let in_argsname = (map (fun (name, _, _) -> name) (get_args node.header)) in
                 run node
                     "main"
                     result
