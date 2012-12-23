@@ -3,7 +3,7 @@ var b : bool; t : int;
 let
     t, b = (1 -> pre t + 1, true -> not (pre b));
     -- s = (1 when b -> ((pre s) + (1 when b)));
-    v, s = add1(current t);
+    v, s = (1, 1) -> add1(pre s);
 tel
 
 node add1(x:int) returns (y, z:int)

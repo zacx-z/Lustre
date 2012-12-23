@@ -47,6 +47,10 @@ let rec select lst = function
   0 -> hd lst
 | n -> select (tl lst) (n - 1)
 
+let rec get_ord func lst =
+    try if func (hd lst) then 0 else 1 + get_ord func (tl lst)
+    with Failure "hd" -> raise Not_found
+
 (* Interpreting Exceptions *)
 exception Multi_var_defs of string * string * string
 exception Type_mismatch of var_type * value
@@ -81,6 +85,10 @@ and context = {
     eqs : (lvalue list * expr) list;
     program : program;
     node_ins : (id * (string * context)) list;
+
+    parent : context option;
+    id : id;
+    input_exprs : expr list;
 }
 (* Three-value Logic for Clock Deduction *)
 and tbool = TTrue | TFalse | TUnknown
@@ -142,6 +150,8 @@ let get_node name program =
     with Not_found -> raise (Node_not_found name)
 
 (* Context Manipulations *)
+
+let with_parent parent context id input_exprs= { context with parent = Some parent; id = id; input_exprs = input_exprs }
 
 let next_clock context input =
     try
@@ -290,7 +300,11 @@ let build_context program node node_name =
       clock = 0;
       eqs = map (fun (lhs, expr) ->  (lhs, precompile expr)) eqs;
       program = program;
-      node_ins = []; }
+      node_ins = [];
+      parent = None;
+      id = 0;
+      input_exprs = []
+    }
 
 (* Main Calculation *)
 
@@ -393,38 +407,23 @@ let rec eval_expr context n expr: context * value =
                        eval_expr c n b
 
     | Apply  (id, name, args) -> let node = get_node name context.program in
-                                 let sync_context context' context =
-                                     match node.header with (_, _, fs, _) ->
-                                     let rec calc c' c =
-                                         let (c', ct) = if c'.clock > c.clock
-                                                  then let (c'_pre, ri) = pre c' in
-                                                       let (tc, c) = calc c'_pre c in
-                                                       (restore_pre c'_pre ri, c)
-                                                  else (c', c) in
-                                         if c'.clock > c.clock
-                                         then let (c'', vals) = eval_lst c' 0 args in
-                                            (c'', fst (next_clock ct (combine (var_names fs) (map (fun v -> [v]) vals))))
-                                         else (c', ct)
-                                     in calc context' context in
-                                 let (found, nc) = (try (true, snd (assoc id context.node_ins))
-                                                    with Not_found ->
-                                                        (false, build_context context.program node name)) in
                                  let outname = match node.header with (_, _, _, rets) ->
                                      match select rets n with (name, _, _) -> name in
-                                 let (context, nc') = sync_context context nc in
-                                 let (c, r) = solve_var nc' outname in
-                                 ({ context with node_ins = if found
-                                     then find_replace
+                                 let (c, r) = solve_var (get_subnode_context context name id args node) outname in
+                                 match c.parent with Some c' ->
+                                 ({ c' with node_ins =
+                                     find_replace
                                         (fun (id', (name, _)) ->
                                          if id = id'
                                          then Some (id', (name, c))
-                                         else None) context.node_ins
-                                     else (id, (name, c)) :: context.node_ins }, r)
+                                         else None) c'.node_ins }, r)
+                                 | _ -> assert false
 
 and eval_lst context n lst =
     fold_right (fun expr (context, res) ->
     let (c, r) = eval_expr context n expr in (c, r :: res) )
     lst (context, [])
+
 
 and solve_var context varname : context * value =
     let eqs = context.eqs in
@@ -433,16 +432,28 @@ and solve_var context varname : context * value =
       Undefined -> (
         let context = bind_var context varname Evaluating
         and meet_varname = function LIdent name -> name = varname | _ -> false in
-        let eq = try find
+        if (lookup context varname).prop != Input
+        then (let eq = try find
                  (fun (lhs, expr) -> exists meet_varname lhs) eqs
                  with Not_found -> raise (Not_in_equations (context.node_name, varname)) in
 
-        let (context, result) = let lhs = fst eq in
-                                eval_expr context (fst (find (meet_varname @. snd)
-                                                             (combine (n_list (length lhs)) lhs)))
-                                                  (snd eq)
+             let (context, result) = let lhs = fst eq in
+                                     eval_expr context (fst (find (meet_varname @. snd)
+                                                                  (combine (n_list (length lhs)) lhs)))
+                                                       (snd eq)
 
-        in bind_var context varname (Val result), result)
+             in bind_var context varname (Val result), result)
+        else match context.parent with
+               Some cp ->
+                   let nc = { cp with node_ins = find_replace
+                                   (fun (id', (name, _)) ->
+                                    if context.id = id'
+                                    then Some (id', (name, context))
+                                    else None) cp.node_ins } in
+                   let expr = select context.input_exprs (get_ord (fun (name, _, _) -> name = varname)
+                   (match (get_node context.node_name context.program).header with (_, _, args, _) -> args)) in
+                   eval_expr nc 0 expr
+             | _ -> assert false)
     | Val v -> (context, v)
     | Evaluating -> print_context context; raise (Cyclic_dependence (context.node_name, varname))
 
@@ -466,7 +477,7 @@ and eval_clock_expr context expr =
 and deduce_clock context n expr = match deduce_clock' context n expr with
       TTrue -> true
     | TFalse -> false
-    | TUnknown -> true
+    | TUnknown -> print_string "warning: clock can't be deduced; set on as default.\n"; true
 
 and deduce_clock' context n expr =
     (*A weird three-value logic*)
@@ -522,23 +533,41 @@ and deduce_clock' context n expr =
     | Pre        a  -> deduce a
     | Current    a  -> TTrue
     | When   (a, b) -> deduce a @& (let (_, r) = eval_clock_expr context b in (match r with VBool v -> v | _ -> raise (Invalid_expr_in_when (expr, r))))
-    (* FIXME So here the new context returned from 'eval_clock_expr' is discarded*)
+    (* FIXME So here the new context returned from 'eval_clock_expr' is
+     * discarded. Not so efficient *)
     | Arrow  (a, b) -> deduce a @- deduce b
 
     | Apply  (id, name, args) -> let node = get_node name context.program in
-                                 match node.header with (_, _, args, rets) ->
+                                 match node.header with (_, _, _, rets) ->
                                      let (_, _, ce) = select rets n in
                                      match ce with
-                                       None -> TTrue
-                                     | Some expr -> let vlst = match expr with
-                                           CWhen v -> [v]
-                                         | CNot  v -> [v]
-                                         | CMatch (v1, v2) -> [v1; v2]
-                                         and in_lst l lst = for_all (fun t -> exists ((=) t) lst) l in
-                                         if in_lst vlst (var_names args)
-                                         then raise (Failure "Not supported")
-                                         else raise (Failure "Not supported") (* TODO hard to deduce*)
+                                       None      -> TTrue
+                                     | Some e    -> to_tb (let (_, r) = (* FIXME low-efficiency *)
+                                                    eval_clock_expr (get_subnode_context
+                                                                     context name id args (get_node name
+                                                                                           context.program)) e in
+                                                    match r with VBool v -> v | _ -> raise (Invalid_expr_in_when (expr, r)))
 
+and get_subnode_context context name id args node =
+    let sync_context context' context =
+        match node.header with (_, _, fs, _) ->
+        let rec calc c' c =
+            let (c', ct) = if c'.clock > c.clock
+                     then let (c'_pre, ri) = pre c' in
+                          let (tc, c) = calc c'_pre c in
+                          (restore_pre c'_pre ri, c)
+                     else (c', c) in
+            if c'.clock > c.clock
+            then let (c'', vals) = eval_lst c' 0 args in
+               (c'', fst (next_clock ct (combine (var_names fs) (map (fun v -> [v]) vals))))
+            else (c', ct)
+        in calc context' context in
+    let (context, nc) = (try (context, snd (assoc id context.node_ins))
+                       with Not_found ->
+                           let nc = build_context context.program node name in
+                           ({context with node_ins = (id, (name, nc)) :: context.node_ins }, nc)) in
+    let (context, nc') = sync_context context nc in
+    with_parent context nc' id args
 
 (* Entry *)
 let run node node_name program input =
