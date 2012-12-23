@@ -39,14 +39,6 @@ let transpose = function
     | matrix -> fold_right (fun line res -> map (fun (l, r) -> l :: r)
                            (combine line res)) matrix (map (fun l -> []) (hd matrix))
 
-let rec n_list = function
-  0 -> []
-| n -> n_list (n - 1) @ [n - 1]
-
-let rec select lst = function
-  0 -> hd lst
-| n -> select (tl lst) (n - 1)
-
 let rec get_ord func lst =
     try if func (hd lst) then 0 else 1 + get_ord func (tl lst)
     with Failure "hd" -> raise Not_found
@@ -86,7 +78,10 @@ and context = {
     program : program;
     node_ins : (id * (string * context)) list;
 
-    parent : context option;
+    cinfo : calling_info option;
+}
+and calling_info = {
+    parent : context;
     id : id;
     input_exprs : expr list;
 }
@@ -151,7 +146,9 @@ let get_node name program =
 
 (* Context Manipulations *)
 
-let with_parent parent context id input_exprs= { context with parent = Some parent; id = id; input_exprs = input_exprs }
+let with_calling parent context id input_exprs =
+    { context with cinfo = Some { parent = parent; id = id; input_exprs =
+        input_exprs } }
 
 let next_clock context input =
     try
@@ -301,9 +298,7 @@ let build_context program node node_name =
       eqs = map (fun (lhs, expr) ->  (lhs, precompile expr)) eqs;
       program = program;
       node_ins = [];
-      parent = None;
-      id = 0;
-      input_exprs = []
+      cinfo = None;
     }
 
 (* Main Calculation *)
@@ -408,15 +403,15 @@ let rec eval_expr context n expr: context * value =
 
     | Apply  (id, name, args) -> let node = get_node name context.program in
                                  let outname = match node.header with (_, _, _, rets) ->
-                                     match select rets n with (name, _, _) -> name in
+                                     match nth rets n with (name, _, _) -> name in
                                  let (c, r) = solve_var (get_subnode_context context name id args node) outname in
-                                 match c.parent with Some c' ->
-                                 ({ c' with node_ins =
+                                 match c.cinfo with Some info ->
+                                 ({ info.parent with node_ins =
                                      find_replace
                                         (fun (id', (name, _)) ->
                                          if id = id'
                                          then Some (id', (name, c))
-                                         else None) c'.node_ins }, r)
+                                         else None) info.parent.node_ins }, r)
                                  | _ -> assert false
 
 and eval_lst context n lst =
@@ -438,21 +433,21 @@ and solve_var context varname : context * value =
                  with Not_found -> raise (Not_in_equations (context.node_name, varname)) in
 
              let (context, result) = let lhs = fst eq in
-                                     eval_expr context (fst (find (meet_varname @. snd)
-                                                                  (combine (n_list (length lhs)) lhs)))
+                                     eval_expr context (get_ord meet_varname lhs)
                                                        (snd eq)
 
              in bind_var context varname (Val result), result)
-        else match context.parent with
-               Some cp ->
-                   let nc = { cp with node_ins = find_replace
+        else match context.cinfo with
+               Some info ->
+                   let nc = { info.parent with node_ins = find_replace
                                    (fun (id', (name, _)) ->
-                                    if context.id = id'
+                                    if info.id = id'
                                     then Some (id', (name, context))
-                                    else None) cp.node_ins } in
-                   let expr = select context.input_exprs (get_ord (fun (name, _, _) -> name = varname)
+                                    else None) info.parent.node_ins } in
+                   let expr = nth info.input_exprs (get_ord (fun (name, _, _) -> name = varname)
                    (match (get_node context.node_name context.program).header with (_, _, args, _) -> args)) in
-                   eval_expr nc 0 expr
+                   let (parent_context, result) = eval_expr nc 0 expr
+                   in { (bind_var context varname (Val result)) with cinfo = Some { info with parent = parent_context } }, result
              | _ -> assert false)
     | Val v -> (context, v)
     | Evaluating -> print_context context; raise (Cyclic_dependence (context.node_name, varname))
@@ -539,7 +534,7 @@ and deduce_clock' context n expr =
 
     | Apply  (id, name, args) -> let node = get_node name context.program in
                                  match node.header with (_, _, _, rets) ->
-                                     let (_, _, ce) = select rets n in
+                                     let (_, _, ce) = nth rets n in
                                      match ce with
                                        None      -> TTrue
                                      | Some e    -> to_tb (let (_, r) = (* FIXME low-efficiency *)
@@ -550,24 +545,19 @@ and deduce_clock' context n expr =
 
 and get_subnode_context context name id args node =
     let sync_context context' context =
-        match node.header with (_, _, fs, _) ->
-        let rec calc c' c =
-            let (c', ct) = if c'.clock > c.clock
-                     then let (c'_pre, ri) = pre c' in
-                          let (tc, c) = calc c'_pre c in
-                          (restore_pre c'_pre ri, c)
-                     else (c', c) in
-            if c'.clock > c.clock
-            then let (c'', vals) = eval_lst c' 0 args in
-               (c'', fst (next_clock ct (combine (var_names fs) (map (fun v -> [v]) vals))))
-            else (c', ct)
-        in calc context' context in
+        let rec build_list = function
+          0 -> []
+        | n -> Undefined :: build_list (n - 1) in
+        let v = build_list (context'.clock - context.clock) in
+        { context with local = map (fun (name, vr) -> (name, { vr with value = v @ vr.value })) context.local;
+                       clock = context'.clock } in
+
     let (context, nc) = (try (context, snd (assoc id context.node_ins))
                        with Not_found ->
                            let nc = build_context context.program node name in
                            ({context with node_ins = (id, (name, nc)) :: context.node_ins }, nc)) in
-    let (context, nc') = sync_context context nc in
-    with_parent context nc' id args
+    let nc' = sync_context context nc in
+    with_calling context nc' id args
 
 (* Entry *)
 let run node node_name program input =
