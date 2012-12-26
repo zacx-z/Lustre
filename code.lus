@@ -1,26 +1,11 @@
-node main(x:int; y:int) returns (result:int)
-var b : bool; tmp : int;
+node main(x,y:real) returns(sin,cos:real)
 let
-    b = true -> (not (pre b));
-    tmp = 0 -> (pre x) + (pre y) - x;
-    result = 1 -> complex(tmp, y); 
+    (sin, cos) = (1, 0) -> sincos(x);
 tel
 
 
-node complex(x:int; y:int) returns (s:int)
-var b : bool;
+node sincos(omega:real) returns (sin, cos: real)
 let
-    b = true -> (not (pre b));
-    s = if b then add(x, y)
-        else mul(x, y);
-tel
-
-node add(x:int; y:int) returns (s:int)
-let
-    s = x + y;
-tel
-
-node mul(x:int; y:int) returns (s:int)
-let
-    s = x * y;
+    sin = omega * integrator(cos, 0.1, 0.0);
+    cos = omega * integrator(0.0 -> -pre(sin), 0.1, 1.0);
 tel
