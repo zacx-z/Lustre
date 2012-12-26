@@ -1,13 +1,26 @@
-node main(x:int; a:int) returns (s, v:int)
-var b : bool; t : int;
+node main(x:int; y:int) returns (result:int)
+var b : bool; tmp : int;
 let
-    t, b = (1 -> pre t + 1, true -> not (pre b));
-    -- s = (1 when b -> ((pre s) + (1 when b)));
-    v, s = (1, 1) -> add1(pre s);
+    b = true -> (not (pre b));
+    tmp = 0 -> (pre x) + (pre y) - x;
+    result = 1 -> complex(tmp, y); 
 tel
 
-node add1(x:int) returns (y, z:int)
+
+node complex(x:int; y:int) returns (s:int)
+var b : bool;
 let
-    y = x + 1;
-    z = y + 1;
+    b = true -> (not (pre b));
+    s = if b then add(x, y)
+        else mul(x, y);
+tel
+
+node add(x:int; y:int) returns (s:int)
+let
+    s = x + y;
+tel
+
+node mul(x:int; y:int) returns (s:int)
+let
+    s = x * y;
 tel
