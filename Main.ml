@@ -7,7 +7,7 @@ open Type
 open Printf
 open Int32
 
-#install_printer expr_formatter;;
+(* #install_printer expr_formatter;; *)
 
 (* Generic Helper Functions *)
 let find_replace func lst = match fold_left (fun (found, res) elem ->
