@@ -188,6 +188,15 @@ let clean_context context = if context.clock > 0
          if hd vr.value = Evaluating then { vr with value = Undefined :: tl vr.value } else vr)) context.local }
     else context
 
+(* parent & children functions *)
+
+(* update the instance specified by 'info' to be 'context' in the parent context and return the parent context *)
+let update_ins info context = { info.parent with node_ins = find_replace
+                                    (fun (id', (name, _)) ->
+                                     if info.id = id'
+                                     then Some (id', (name, context))
+                                     else None) info.parent.node_ins }
+
 (* finding and binding variables *)
 let lookup context name = assoc name context.local
 let bind_var context (name:string) (value:tval) : context =
@@ -298,12 +307,11 @@ let build_context program node node_name =
       eqs = map (fun (lhs, expr) ->  (lhs, precompile expr)) eqs;
       program = program;
       node_ins = [];
-      cinfo = None;
-    }
+      cinfo = None; }
 
 (* Main Calculation *)
 
-(* n:int refers the position of the element in the list expression *)
+(* n:int refers to the position of the element in the list expression *)
 let rec eval_expr context n expr: context * value =
     let get_val x =
         let eval varname = solve_var context varname in
@@ -430,7 +438,7 @@ and solve_var context varname : context * value =
         if (lookup context varname).prop != Input
         then (let eq = try find
                  (fun (lhs, expr) -> exists meet_varname lhs) eqs
-                 with Not_found -> raise (Not_in_equations (context.node_name, varname)) in
+                  with Not_found -> print_context context;raise (Not_in_equations (context.node_name, varname)) in
 
              let (context, result) = let lhs = fst eq in
                                      eval_expr context (get_ord meet_varname lhs)
@@ -439,11 +447,7 @@ and solve_var context varname : context * value =
              in bind_var context varname (Val result), result)
         else match context.cinfo with
                Some info ->
-                   let nc = { info.parent with node_ins = find_replace
-                                   (fun (id', (name, _)) ->
-                                    if info.id = id'
-                                    then Some (id', (name, context))
-                                    else None) info.parent.node_ins } in
+                   let nc = update_ins info context in
                    let expr = nth info.input_exprs (get_ord (fun (name, _, _) -> name = varname)
                    (match (get_node context.node_name context.program).header with (_, _, args, _) -> args)) in
                    let (parent_context, result) = eval_expr nc 0 expr
@@ -488,11 +492,18 @@ and deduce_clock' context n expr =
                         Evaluating -> TUnknown
                       | Undefined  ->
                         let nc = bind_var context varname Evaluating in
-                        let eq = try find
+                        if (lookup context varname).prop != Input
+                        then let eq = try find
                                 (fun (lhs, expr) -> exists
                                     (function LIdent name -> name = varname | _ -> false) lhs) context.eqs
                                 with Not_found -> raise (Not_in_equations (context.node_name, varname)) in
-                        deduce_clock' nc 0 (snd eq)
+                             deduce_clock' nc 0 (snd eq)
+                        else (match context.cinfo with
+                          Some info -> let nc = update_ins info nc
+                                       and expr = nth info.input_exprs (get_ord (fun (name, _, _) -> name = varname)
+                                                      (match (get_node context.node_name context.program).header with (_, _, args, _) -> args)) in
+                                       deduce_clock' nc 0 expr
+                        | _ -> assert false)
                       | Val v      -> to_tb (not (v = VNone)))
     | t -> TTrue
 

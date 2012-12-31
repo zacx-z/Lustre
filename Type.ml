@@ -13,8 +13,8 @@ and var_type = TBool | TInt | TChar | TReal | TIdent of string
 and lvalue = LIdent of string | Underscore
 and value = VBool of bool | VInt of int32 | VChar of char | VReal of float
           | VIdent of string
-          | VNil  (*produced by pre operator*)
-          | VNone (*not in clock cycle *)
+          | VNil  (* usually produced by pre operator *)
+          | VNone (* not have value on this clock *)
 and expr = RValue   of value
          | Elist    of expr list
          | IntConv  of expr

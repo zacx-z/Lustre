@@ -5,8 +5,9 @@ open Lexing
 
 exception Parse_Error of string
 
-let parse_error info = let pos = Parsing.symbol_start_pos() in
-    raise (Parse_Error (Printf.sprintf "%s - %d: %s" pos.pos_fname pos.pos_lnum info))
+let parse_error info = let spos = Parsing.symbol_start_pos ()
+                       (* and epos = Parsing.symbol_end_pos () *) in
+    raise (Parse_Error (Printf.sprintf "%s - line %d (%d): %s" spos.pos_fname spos.pos_lnum (spos.pos_cnum - spos.pos_bol) info))
 %}
 
 /* package */
